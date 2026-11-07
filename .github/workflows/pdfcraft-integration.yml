@@ -31,14 +31,17 @@ jobs:
           upstream=$(tr -d '\r\n' < integration/pdfcraft/upstream.txt)
           expected=$(tr -d '\r\n' < integration/pdfcraft/tree.txt)
           [[ "$upstream" =~ ^[a-f0-9]{40}$ && "$expected" =~ ^[a-f0-9]{40}$ ]]
+          # Windows checkout may convert text to CRLF, including the binary patch headers.
+          # Read the exact committed bytes, which are also what source.json hashes.
+          git show HEAD:integration/pdfcraft/pdfcraft-integration.patch > "$RUNNER_TEMP/pdfcraft-integration.patch"
           git init pdfcraft
           git -C pdfcraft config core.autocrlf false
           git -C pdfcraft config core.longpaths true
           git -C pdfcraft remote add origin https://github.com/storytold/pdfcraft.git
           git -C pdfcraft fetch --depth=1 origin "$upstream"
           git -C pdfcraft checkout --detach FETCH_HEAD
-          git -C pdfcraft apply --check ../integration/pdfcraft/pdfcraft-integration.patch
-          git -C pdfcraft apply ../integration/pdfcraft/pdfcraft-integration.patch
+          git -C pdfcraft apply --check "$RUNNER_TEMP/pdfcraft-integration.patch"
+          git -C pdfcraft apply "$RUNNER_TEMP/pdfcraft-integration.patch"
           git -C pdfcraft add -A
           actual=$(git -C pdfcraft write-tree)
           test "$actual" = "$expected"
