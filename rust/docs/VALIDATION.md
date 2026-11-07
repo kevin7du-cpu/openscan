@@ -16,19 +16,22 @@ Windows local checks completed:
   requirements were corrected; an empty-feeder acquisition completes with a clear error.
 
 Cross-platform CI completed at Rust source commit
-`e0238f7a7431e7cf6814652c80d62933417515a7`:
+`6b5947858ea71f4a946fa465b7122ae507779b20`:
 
 | Runner | Tests passed | Format / Clippy / release build |
 | --- | ---: | --- |
-| Windows x64 | 20 | Passed |
-| Linux x64 | 20 | Passed |
-| macOS ARM64 | 19 | Passed |
+| Windows x64 | 22 | Passed |
+| Linux x64 | 22 | Passed |
+| macOS ARM64 | 21 | Passed |
 
-[Run and downloadable binaries](https://github.com/kevin7du-cpu/openscan/actions/runs/42418213873).
+[Run and downloadable binaries](https://github.com/kevin7du-cpu/openscan/actions/runs/42421535463).
 Linux's total includes an actual `scanimage` invocation against the installed SANE
-`test:0` driver, then processing and PDF export. Windows has an additional BMP-format
-selection test. The Windows CI release binary also passed the local real-model OCR
-test with independent PDFCraft extraction and rendering.
+`test:0` driver, then processing and PDF export. The acquired A5 dimensions at 75 DPI
+are checked within one pixel, and an unsupported 100 DPI request is rejected before
+acquisition. Tests also cover source/mode-dependent options, resolution steps and
+paper bounds. Windows has an additional BMP-format selection test. The Windows CI
+release binary also passed the local real-model OCR test using models alongside the
+packaged executable, with independent PDFCraft extraction and rendering.
 
 Pending: a new physical test sheet through the Rust build, duplex/HP acquisition,
 native UI inspection and real devices on Linux/macOS.
