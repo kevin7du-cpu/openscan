@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/OpenScan.Core/OpenScan.Core.csproj" /></ItemGroup>
+  <ItemGroup><Content Include="../../resources/tessdata/*" Link="tessdata/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+</Project>
