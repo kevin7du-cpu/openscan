@@ -23,10 +23,11 @@ the scanner model; macOS Image Capture and TWAIN are not implemented.
 
 ## Verification
 
-[Windows, Linux and macOS checks passed](https://github.com/kevin7du-cpu/openscan/actions/runs/42418213873)
-for Rust source commit `e0238f7a7431e7cf6814652c80d62933417515a7`: formatting,
+[Windows, Linux and macOS checks passed](https://github.com/kevin7du-cpu/openscan/actions/runs/42421535463)
+for Rust source commit `6b5947858ea71f4a946fa465b7122ae507779b20`: formatting,
 tests, strict Clippy and optimized native builds. Linux also acquired and exported
-a page from SANE's installed test driver. A Windows optimized build passed OCR
+a page from SANE's installed test driver with the requested page size and resolution.
+A Windows optimized build passed OCR
 export followed by independent PDFCraft text extraction and rendering.
 
 Physical scanning through the new Rust build and native GUI checks remain pending.
