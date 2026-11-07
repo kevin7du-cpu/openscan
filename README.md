@@ -27,8 +27,8 @@ the scanner model; macOS Image Capture and TWAIN are not implemented.
 for Rust source commit `6b5947858ea71f4a946fa465b7122ae507779b20`: formatting,
 tests, strict Clippy and optimized native builds. Linux also acquired and exported
 a page from SANE's installed test driver with the requested page size and resolution.
-A Windows optimized build passed OCR
-export followed by independent PDFCraft text extraction and rendering.
+A Windows optimized build passed OCR export followed by independent PDFCraft text
+extraction and rendering.
 
 Physical scanning through the new Rust build and native GUI checks remain pending.
 See [validation details](rust/docs/VALIDATION.md). Compilation and synthetic drivers
