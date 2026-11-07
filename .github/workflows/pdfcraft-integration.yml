@@ -1,0 +1,117 @@
+name: PDFCraft integration validation
+on:
+  push:
+    paths: ['integration/pdfcraft/**', '.github/workflows/pdfcraft-integration.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: 2
+      CARGO_INCREMENTAL: 0
+      PDFCRAFT_SYSTEM_FONTS: 0
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Reconstruct the locally tested source tree
+        run: |
+          set -euo pipefail
+          upstream=$(tr -d '\r\n' < integration/pdfcraft/upstream.txt)
+          expected=$(tr -d '\r\n' < integration/pdfcraft/tree.txt)
+          [[ "$upstream" =~ ^[a-f0-9]{40}$ && "$expected" =~ ^[a-f0-9]{40}$ ]]
+          git init pdfcraft
+          git -C pdfcraft config core.autocrlf false
+          git -C pdfcraft config core.longpaths true
+          git -C pdfcraft remote add origin https://github.com/storytold/pdfcraft.git
+          git -C pdfcraft fetch --depth=1 origin "$upstream"
+          git -C pdfcraft checkout --detach FETCH_HEAD
+          git -C pdfcraft apply --check ../integration/pdfcraft/pdfcraft-integration.patch
+          git -C pdfcraft apply ../integration/pdfcraft/pdfcraft-integration.patch
+          git -C pdfcraft add -A
+          actual=$(git -C pdfcraft write-tree)
+          test "$actual" = "$expected"
+          printf 'Verified source tree: %s\n' "$actual"
+      - name: Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libgtk-3-dev mesa-vulkan-drivers qpdf poppler-utils
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+      - name: Download the tested Rust scanner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: kevin7du-cpu/openscan
+        run: gh run download 42421535463 --name openscan-${{ runner.os }}-${{ runner.arch }} --dir scanner-artifact
+      - name: Verify and select the scanner binary
+        run: |
+          set -euo pipefail
+          case "${{ runner.os }}" in
+            Windows) binary=openscan.exe; expected=5875f4b73f5fa1b2b7e58bb9e2f2049b1bf51d37e6d726286f45e8f503dda969 ;;
+            Linux) binary=openscan; expected=a50f1e148e01199a0b06b900a5b0ec6bf6f3cb6781f8c10d4f01e41695bc5f76 ;;
+            macOS) binary=openscan; expected=ab7defd3161b1c4c07500baf727c9f80b4e94de17bfaac4405aaffb9c34b4207 ;;
+            *) exit 1 ;;
+          esac
+          path="$PWD/scanner-artifact/target/release/$binary"
+          if command -v sha256sum >/dev/null; then actual=$(sha256sum "$path" | cut -d ' ' -f 1); else actual=$(shasum -a 256 "$path" | cut -d ' ' -f 1); fi
+          test "$actual" = "$expected"
+          chmod +x "$path"
+          # Rust's Windows path parser needs an absolute Windows path, not MSYS /d/... .
+          if [ "${{ runner.os }}" = Windows ]; then path=$(cygpath -m "$path"); fi
+          printf 'PDFCRAFT_SCANNER=%s\n' "$path" >> "$GITHUB_ENV"
+      - name: Formatting
+        working-directory: pdfcraft
+        run: cargo fmt --all --check
+      - name: Application, interface, engine and automation tests
+        working-directory: pdfcraft
+        run: cargo test --locked --profile low-disk -p pdfcraft -p pdfcraft-ui-egui -p pdfcraft-engine -p pdfcraft-automation -- --test-threads=1
+      - name: Real companion protocol and preset round trip
+        working-directory: pdfcraft
+        run: cargo test --locked --profile low-disk -p pdfcraft-automation --lib scanner_presets_round_trip_through_the_companion -- --ignored --test-threads=1
+      - name: Scoped strict Clippy
+        working-directory: pdfcraft
+        run: cargo clippy --locked --profile low-disk -p pdfcraft -p pdfcraft-ui-egui -p pdfcraft-engine -p pdfcraft-automation --all-targets -- -D warnings
+      - name: Architecture, assets and parity
+        working-directory: pdfcraft
+        run: |
+          cargo xtask layers
+          cargo xtask assets
+          cargo xtask parity
+      - name: WebAssembly compatibility
+        if: runner.os == 'Linux'
+        working-directory: pdfcraft
+        run: cargo xtask wasm
+      - name: Build the native application and CLI
+        working-directory: pdfcraft
+        run: cargo build --locked --profile low-disk -p pdfcraft -p pdfcraft-cli
+      - name: Save tested native binaries and provenance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pdfcraft-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            pdfcraft/target/low-disk/pdfcraft
+            pdfcraft/target/low-disk/pdfcraft.exe
+            pdfcraft/target/low-disk/pdfcraft-cli
+            pdfcraft/target/low-disk/pdfcraft-cli.exe
+            pdfcraft/LICENSE-MIT
+            pdfcraft/LICENSE-APACHE
+            pdfcraft/NOTICE
+            pdfcraft/ATTRIBUTION.md
+            pdfcraft/licenses/
+            integration/pdfcraft/
+          if-no-files-found: error
