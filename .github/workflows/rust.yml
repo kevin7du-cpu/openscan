@@ -45,6 +45,7 @@ jobs:
         run: |
           mkdir -p "$SANE_CONFIG_DIR"
           printf 'test\n' > "$SANE_CONFIG_DIR/dll.conf"
+          printf 'geometry_max 400.0\ngeometry_quant 0.0\nresolution_min 75.0\nresolution_max 600.0\nresolution_quant 75.0\nresolution 75.0\n' > "$SANE_CONFIG_DIR/test.conf"
           cargo test --locked -p openscan-core --test sane_driver -- --ignored --test-threads=1
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
