@@ -1,0 +1,65 @@
+name: Rust scanner validation
+on:
+  push:
+    paths: ['rust/**', '.github/workflows/rust.yml']
+  pull_request:
+    paths: ['rust/**', '.github/workflows/rust.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: 2
+    defaults:
+      run:
+        working-directory: rust
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Linux window and synthetic scanner dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev sane-utils
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+      - name: Formatting
+        run: cargo fmt --all --check
+      - name: Tests
+        run: cargo test --locked --workspace -- --test-threads=1
+      - name: SANE test device
+        if: runner.os == 'Linux'
+        env:
+          SANE_CONFIG_DIR: ${{ runner.temp }}/openscan-sane
+        run: |
+          mkdir -p "$SANE_CONFIG_DIR"
+          printf 'test\n' > "$SANE_CONFIG_DIR/dll.conf"
+          cargo test --locked -p openscan-core --test sane_driver -- --ignored --test-threads=1
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Native build
+        run: cargo build --locked --release -p openscan
+      - name: Save tested binary
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: openscan-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            rust/target/release/openscan
+            rust/target/release/openscan.exe
+            rust/README.md
+            rust/LICENSE
+            rust/NOTICE
+            rust/THIRD-PARTY-NOTICES.html
+            rust/licenses/
+          if-no-files-found: error
