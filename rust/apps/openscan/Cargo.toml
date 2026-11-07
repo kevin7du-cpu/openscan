@@ -1,0 +1,19 @@
+[package]
+name = "openscan"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+[lints]
+workspace = true
+[dependencies]
+openscan-core.workspace = true
+openscan-ui.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+eframe.workspace = true
+egui.workspace = true
+image.workspace = true
+craft-dialogs = { git = "https://github.com/storytold/craft-libs", rev = "787a7a0f972fd1d7a7618fdbeca3a5267a0407ff" }
+[dev-dependencies]
+tempfile = "3.27"
