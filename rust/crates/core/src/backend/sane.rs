@@ -87,15 +87,17 @@ impl Sane {
         }
         Ok((status, format!("{stdout}\n{stderr}")))
     }
-    fn options(&self, id: &str) -> Result<String> {
+    fn options(&self, id: &str, configured: &[String], cancel: &Cancellation) -> Result<String> {
         let native = id
             .strip_prefix("sane:")
             .ok_or_else(|| error("Invalid SANE identifier."))?;
-        let (status, text) = self.run(
-            &[format!("--device-name={native}"), "--help".into()],
-            &Cancellation::default(),
-            Duration::from_secs(30),
-        )?;
+        let mut args = vec![format!("--device-name={native}")];
+        args.extend_from_slice(configured);
+        // SANE processes --help after the settings, without acquiring a page.
+        // Source and mode can change the available resolution and scan area.
+        args.push("--help".into());
+        cancel.check()?;
+        let (status, text) = self.run(&args, cancel, Duration::from_secs(30))?;
         if !status.success() {
             return Err(error(format!(
                 "SANE could not read scanner options: {text}"
@@ -152,28 +154,128 @@ fn source_name(text: &str, source: Source) -> Result<String> {
             ))
         })
 }
-fn dpi_range(text: &str) -> (u32, u32, Vec<u32>) {
-    let values = values(text, "--resolution ");
-    let joined = values.join("|");
-    let numbers: Vec<u32> = joined
-        .split(|c: char| !c.is_ascii_digit())
-        .filter_map(|v| v.parse().ok())
-        .filter(|v| (1..=9600).contains(v))
-        .collect();
-    let min = numbers.iter().copied().min().unwrap_or(75).max(75);
-    let max = numbers.iter().copied().max().unwrap_or(600).min(600);
-    let list = if joined.contains("..") {
-        [75, 100, 150, 200, 300, 400, 600]
-            .into_iter()
-            .filter(|v| *v >= min && *v <= max)
-            .collect()
+fn option_line<'a>(text: &'a str, option: &str) -> Option<&'a str> {
+    text.lines()
+        .find_map(|line| line.trim().strip_prefix(option))
+}
+
+fn leading_number(text: &str) -> Option<f64> {
+    let number = text
+        .trim_start()
+        .split(|c: char| !c.is_ascii_digit() && !['.', '-', '+'].contains(&c))
+        .next()?
+        .parse::<f64>()
+        .ok()?;
+    number.is_finite().then_some(number)
+}
+
+fn numeric_range(text: &str) -> Option<(f64, f64, f64)> {
+    let (start, remainder) = text.split_once("..")?;
+    let min = leading_number(start)?;
+    let max = leading_number(remainder)?;
+    let step = match text.split_once("in steps of ") {
+        Some((_, step)) => leading_number(step)?,
+        None => 0.0,
+    };
+    (min <= max && step >= 0.0).then_some((min, max, step))
+}
+
+fn supported_dpi(text: &str) -> Result<Vec<u32>> {
+    let line = option_line(text, "--resolution ")
+        .filter(|line| !line.contains("[inactive]"))
+        .ok_or_else(|| error("The SANE driver does not expose an active resolution option."))?;
+    let specification = line.split('[').next().unwrap_or("");
+    let mut supported = if specification.contains("..") {
+        let (min, max, step) = numeric_range(specification)
+            .ok_or_else(|| error("The SANE driver returned an invalid resolution range."))?;
+        // Enumerate only our bounded integer DPI domain. The step is a constraint,
+        // never another candidate DPI or a lower endpoint.
+        (75..=600)
+            .filter(|dpi| {
+                let value = f64::from(*dpi);
+                value >= min
+                    && value <= max
+                    && (step == 0.0 || {
+                        let steps = (value - min) / step;
+                        steps.is_finite() && (steps - steps.round()).abs() < 0.0001
+                    })
+            })
+            .collect::<Vec<_>>()
     } else {
-        numbers
-            .into_iter()
-            .filter(|v| *v >= min && *v <= max)
+        specification
+            .split('|')
+            .filter_map(leading_number)
+            .filter(|value| (75.0..=600.0).contains(value) && value.fract() == 0.0)
+            .map(|value| value as u32)
             .collect()
     };
-    (min, max, list)
+    supported.sort_unstable();
+    supported.dedup();
+    if supported.is_empty() {
+        return Err(error(
+            "The SANE driver has no supported resolution within 75–600 DPI.",
+        ));
+    }
+    Ok(supported)
+}
+
+fn dpi_range(text: &str) -> Result<(u32, u32, Vec<u32>)> {
+    let supported = supported_dpi(text)?;
+    let min = supported
+        .first()
+        .copied()
+        .ok_or_else(|| error("Missing minimum DPI."))?;
+    let max = supported
+        .last()
+        .copied()
+        .ok_or_else(|| error("Missing maximum DPI."))?;
+    let list = if values(text, "--resolution ").join("|").contains("..") {
+        supported
+            .into_iter()
+            .filter(|dpi| {
+                *dpi == min || *dpi == max || [75, 100, 150, 200, 300, 400, 600].contains(dpi)
+            })
+            .collect()
+    } else {
+        supported
+    };
+    Ok((min, max, list))
+}
+
+fn scan_area_arguments(options: &str, paper: Paper) -> Result<Vec<String>> {
+    let (width, height) = paper.millimeters();
+    let mut args = Vec::new();
+    for (option, length) in [("-x ", width), ("-y ", height)] {
+        let Some(line) = option_line(options, option) else {
+            return Err(error(
+                "The SANE driver does not expose a configurable paper size.",
+            ));
+        };
+        let (min, max, step) = numeric_range(line)
+            .filter(|_| line.contains("mm") && !line.contains("[inactive]"))
+            .ok_or_else(|| {
+                error("The SANE driver does not report a usable scan area in millimeters.")
+            })?;
+        // Drivers can silently clamp oversized paper. Reject it before acquisition
+        // instead of presenting a cropped document as a complete page.
+        if f64::from(length) < min - 0.01 || f64::from(length) > max + 0.01 {
+            return Err(error(format!(
+                "The selected paper size exceeds the scanner's {} range ({min}–{max} mm).",
+                option.trim()
+            )));
+        }
+        if step > 0.0 {
+            let steps = (f64::from(length) - min) / step;
+            let rounded = min + steps.round() * step;
+            if !rounded.is_finite() || (rounded - f64::from(length)).abs() > 0.01 {
+                return Err(error(
+                    "The selected paper size does not match the SANE driver's scan-area increments.",
+                ));
+            }
+        }
+        args.extend([option.trim().into(), length.to_string()]);
+    }
+    Ok(args)
 }
 impl Backend for Sane {
     fn devices(&self, cancel: &Cancellation) -> Result<Vec<Device>> {
@@ -197,18 +299,26 @@ impl Backend for Sane {
             .collect())
     }
     fn capabilities(&self, id: &str) -> Result<Capabilities> {
-        let text = self.options(id)?;
-        let (min_dpi, max_dpi, dpi) = dpi_range(&text);
-        let sources = [Source::Flatbed, Source::Feeder, Source::Duplex]
-            .into_iter()
-            .filter(|s| source_name(&text, *s).is_ok())
-            .map(|source| SourceCaps {
+        let cancel = Cancellation::default();
+        let text = self.options(id, &[], &cancel)?;
+        let mut sources = Vec::new();
+        for source in [Source::Flatbed, Source::Feeder, Source::Duplex] {
+            let Ok(name) = source_name(&text, source) else {
+                continue;
+            };
+            let options = if name.is_empty() {
+                text.clone()
+            } else {
+                self.options(id, &[format!("--source={name}")], &cancel)?
+            };
+            let (min_dpi, max_dpi, dpi) = dpi_range(&options)?;
+            sources.push(SourceCaps {
                 source,
-                dpi: dpi.clone(),
+                dpi,
                 min_dpi,
                 max_dpi,
-            })
-            .collect();
+            });
+        }
         Ok(Capabilities{device_id:id.into(),sources,note:"Options reported by the installed SANE driver. Driver availability varies by scanner.".into()})
     }
     fn acquire(
@@ -227,8 +337,15 @@ impl Backend for Sane {
         let native = id
             .strip_prefix("sane:")
             .ok_or_else(|| error("Invalid SANE identifier."))?;
-        let options = self.options(id)?;
+        let options = self.options(id, &[], cancel)?;
         let source = source_name(&options, p.source)?;
+        let mut configured = Vec::new();
+        let options = if source.is_empty() {
+            options
+        } else {
+            configured.push(format!("--source={source}"));
+            self.options(id, &configured, cancel)?
+        };
         let modes = values(&options, "--mode ");
         let mode = modes
             .into_iter()
@@ -242,36 +359,37 @@ impl Backend for Sane {
             .ok_or_else(|| {
                 error("The scanner driver does not advertise the requested color mode.")
             })?;
+        configured.push(format!("--mode={mode}"));
+        let options = self.options(id, &configured, cancel)?;
+        if !supported_dpi(&options)?.contains(&p.dpi) {
+            return Err(error(format!(
+                "The selected source and color mode do not support {} DPI.",
+                p.dpi
+            )));
+        }
+        configured.push(format!("--resolution={}", p.dpi));
+        let options = self.options(id, &configured, cancel)?;
+        configured.extend(scan_area_arguments(&options, p.paper)?);
         fs::create_dir_all(directory)?;
         if fs::read_dir(directory)?.next().is_some() {
             return Err(error(
                 "Acquisition folder must be empty to preserve earlier pages.",
             ));
         }
-        let (w, h) = p.paper.millimeters();
         let count = if p.source == Source::Flatbed {
             1
         } else {
             p.max_pages
         };
-        let mut args = vec![
-            format!("--device-name={native}"),
-            format!("--mode={mode}"),
-            format!("--resolution={}", p.dpi),
+        let mut args = vec![format!("--device-name={native}")];
+        // Set source before mode/DPI/area, since later source changes may reset them.
+        args.extend(configured);
+        args.extend([
             "--format=png".into(),
             format!("--batch={}", directory.join("raw-%04d.png").display()),
             format!("--batch-count={count}"),
             "--batch-start=1".into(),
-        ];
-        if !source.is_empty() {
-            args.push(format!("--source={source}"));
-        }
-        if options.lines().any(|l| l.trim().starts_with("-x ")) {
-            args.extend(["-x".into(), w.to_string()]);
-        }
-        if options.lines().any(|l| l.trim().starts_with("-y ")) {
-            args.extend(["-y".into(), h.to_string()]);
-        }
+        ]);
         let result = self.run(&args, cancel, Duration::from_secs(900));
         let mut received = 0;
         for i in 1..=count {
@@ -302,7 +420,7 @@ mod tests {
             "ADF Duplex"
         );
         assert_eq!(
-            dpi_range(HELP),
+            dpi_range(HELP).expect("DPI"),
             (75, 600, vec![75, 100, 150, 200, 300, 400, 600])
         );
         assert!(source_name("--source Flatbed [Flatbed]", Source::Duplex).is_err());
@@ -311,5 +429,46 @@ mod tests {
             ""
         );
         assert!(source_name("--mode Color|Gray [Color]", Source::Duplex).is_err());
+    }
+
+    #[test]
+    fn sane_resolution_steps_are_not_mistaken_for_lower_resolutions() {
+        assert_eq!(
+            dpi_range("--resolution 200..1200dpi (in steps of 100) [300]").expect("DPI"),
+            (200, 600, vec![200, 300, 400, 600])
+        );
+        assert_eq!(
+            dpi_range("--resolution 75..600dpi (in steps of 75) [300]").expect("DPI"),
+            (75, 600, vec![75, 150, 300, 600])
+        );
+        assert_eq!(
+            supported_dpi("--resolution 200|300|600|1200dpi [300]").expect("list"),
+            vec![200, 300, 600]
+        );
+        assert!(supported_dpi("--resolution 601..1200dpi [1200]").is_err());
+        assert!(supported_dpi("--resolution 75..600dpi [inactive]").is_err());
+        assert!(supported_dpi("--resolution invalid [300]").is_err());
+        assert!(supported_dpi("--resolution 600..75dpi [300]").is_err());
+        assert!(supported_dpi("--mode Color [Color]").is_err());
+    }
+
+    #[test]
+    fn sane_rejects_paper_larger_than_the_selected_source() {
+        let options = "-x 0..216mm [216]\n-y 0..297mm [297]";
+        assert_eq!(
+            scan_area_arguments(options, Paper::A4).expect("A4"),
+            vec!["-x", "210", "-y", "297"]
+        );
+        assert!(scan_area_arguments(options, Paper::Legal).is_err());
+        assert!(scan_area_arguments("-x 0..200mm [200]\n-y 0..200mm [200]", Paper::A5).is_err());
+        assert!(scan_area_arguments("-x 0..200mm [200]", Paper::A5).is_err());
+        assert!(scan_area_arguments("-x 0..900px [900]\n-y 0..900px [900]", Paper::A5).is_err());
+        assert!(
+            scan_area_arguments(
+                "-x 0..400mm (in steps of 10) [200]\n-y 0..400mm (in steps of 10) [200]",
+                Paper::Letter
+            )
+            .is_err()
+        );
     }
 }
