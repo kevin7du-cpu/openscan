@@ -1,0 +1,14 @@
+[package]
+name = "openscan-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+[lints]
+workspace = true
+[dependencies]
+openscan-core.workspace = true
+egui.workspace = true
+craft-ui.workspace = true
+[dev-dependencies]
+egui_kittest = { version = "0.37", default-features = false }
