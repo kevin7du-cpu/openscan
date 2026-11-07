@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><Description>Reusable local document acquisition, correction, presets and PDF export.</Description></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NAPS2.Wia" Version="2.0.3" />
+    <PackageReference Include="OpenCvSharp4" Version="[4.13.0.20260627]" />
+    <!-- 6.2.0 is MIT. Later releases changed license; do not float this dependency. -->
+    <PackageReference Include="PDFsharp-GDI" Version="[6.2.0]" />
+    <!-- Override PDFsharp's older transitive version with the serviced release. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="[8.0.2]" />
+    <PackageReference Include="Tesseract" Version="5.2.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="../../native/win-x64/*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="../../resources/fonts/Inter-Regular.ttf" LogicalName="OpenScan.Inter-Regular.ttf" />
+  </ItemGroup>
+</Project>
