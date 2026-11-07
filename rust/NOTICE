@@ -1,0 +1,31 @@
+OpenScan Rust implementation
+Copyright (c) 2026 OpenScan contributors. MIT license (LICENSE).
+
+The PDF searchable-text layer follows PDF Type 3 / ToUnicode conventions and
+the technique in PDFCraft's engine OCR layer. PDFCraft is Copyright ArtCraft Team
+and contributors, MIT OR Apache-2.0. Source reviewed at commit
+5644d56c64af1529b0f9012874886fcad855c257:
+https://github.com/storytold/pdfcraft/blob/5644d56c64af1529b0f9012874886fcad855c257/crates/engine/src/ocr/layer.rs
+No PDFCraft brand artwork is included.
+
+Optional OCR models by Robert Knight, trained on HierText; CC-BY-SA-4.0.
+The original models are distributed unchanged. Model card:
+https://huggingface.co/robertknight/ocrs/blob/df0edd170279ab971b53e094c627255a87e1a503/README.md
+Original download definitions:
+https://github.com/robertknight/ocrs/blob/0c826441362a701c55560fefc17bf356b6d1037e/ocrs/examples/download-models.sh
+
+text-detection.onnx
+https://ocrs-models.s3-accelerate.amazonaws.com/text-detection.onnx
+SHA256 a917b23dbd9524b465df7e922641b3ff2981623df4ded5a0234004ef2fee7cfe
+
+text-recognition.onnx
+https://ocrs-models.s3-accelerate.amazonaws.com/text-recognition.onnx
+SHA256 86c145c2edb96c8caed5b1ebb8f44d706408922211451c309c625157dd6061c5
+
+License: https://creativecommons.org/licenses/by-sa/4.0/
+Full legal text: licenses/CC-BY-SA-4.0.txt
+SHA256 28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5
+
+Rust dependency and embedded-font notices are in THIRD-PARTY-NOTICES.html.
+SANE scanimage and manufacturer scanner drivers are separate system prerequisites;
+they are not linked into or distributed with this application.

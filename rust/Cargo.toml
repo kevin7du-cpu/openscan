@@ -1,0 +1,54 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/ui", "apps/openscan"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+repository = "https://github.com/kevin7du-cpu/openscan"
+
+[workspace.dependencies]
+openscan-core = { path = "crates/core" }
+openscan-ui = { path = "crates/ui" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "bmp", "tiff", "pnm"] }
+egui = "0.37"
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "wgpu", "glow", "accesskit", "wayland", "x11", "clipboard"] }
+craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "787a7a0f972fd1d7a7618fdbeca3a5267a0407ff" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unimplemented = "deny"
+todo = "deny"
+
+[profile.dev]
+debug = 1
+incremental = false
+[profile.dev.package."*"]
+opt-level = 2
+debug = 0
+[profile.release]
+lto = "thin"
+strip = true
+
+# Match PdfCraft's reviewed window stack so a host can embed openscan-ui directly.
+[patch.crates-io]
+ecolor = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+emath = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+epaint = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+epaint_default_fonts = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui-winit = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui-wgpu = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui_glow = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui_kittest = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+eframe = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+winit = { git = "https://github.com/storytold/winit.git", rev = "a517b3846ee8457d84ee4975110bfda6797c44dc" }
