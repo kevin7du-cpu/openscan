@@ -1,0 +1,9 @@
+**/bin/
+**/obj/
+dist/
+work/
+.tools/
+*.user
+native/win-x64/
+resources/fonts/
+resources/tessdata/*.traineddata
