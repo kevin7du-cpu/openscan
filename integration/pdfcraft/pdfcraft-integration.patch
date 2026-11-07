@@ -208,10 +208,10 @@ index f488d160cc4e5b5d7236bbeba2925534fd551849..397cb6d75b0137931e8568267380e97f
  </p>
  
 diff --git a/apps/pdfcraft/src/main.rs b/apps/pdfcraft/src/main.rs
-index be2290d2f916b63a1ab55a57ba60d3c5d7b8b7e2..3c8d686763396aea4be82019e032a0f5e9874693 100644
+index be2290d2f916b63a1ab55a57ba60d3c5d7b8b7e2..6872747aebdac652154c4f007e85b07f8deac760 100644
 --- a/apps/pdfcraft/src/main.rs
 +++ b/apps/pdfcraft/src/main.rs
-@@ -337,10 +337,15 @@ fn native_options(integrated: bool, app_frame: bool, renderer: eframe::Renderer)
+@@ -337,11 +337,11 @@ fn native_options(integrated: bool, app_frame: bool, renderer: eframe::Renderer)
          .with_drag_and_drop(true)
          // Wayland app id: matches packaging/linux/ai.storyteller.pdfcraft.desktop.
          .with_app_id(APP_ID);
@@ -219,22 +219,33 @@ index be2290d2f916b63a1ab55a57ba60d3c5d7b8b7e2..3c8d686763396aea4be82019e032a0f5
 -    match eframe::icon_data::from_png_bytes(APP_ICON_PNG) {
 -        Ok(icon) => viewport = viewport.with_icon(icon),
 -        Err(e) => log::warn!("app icon: {e}"),
+-    }
 +    // AppKit supplies a bundled app's Dock icon, including a user's Finder override.
 +    // Setting an icon here replaces that override on every launch. Unbundled macOS
 +    // launches and Windows/Linux still need the embedded window icon.
 +    let executable = std::env::current_exe().ok();
-+    if use_embedded_app_icon(cfg!(target_os = "macos"), executable.as_deref()) {
++    viewport = with_app_icon(viewport, cfg!(target_os = "macos"), executable.as_deref());
+     if integrated {
+         viewport = viewport.with_fullsize_content_view(true).with_titlebar_shown(false).with_title_shown(false);
+     }
+@@ -361,6 +361,37 @@ fn native_options(integrated: bool, app_frame: bool, renderer: eframe::Renderer)
+     native
+ }
+ 
++fn with_app_icon(mut viewport: egui::ViewportBuilder, macos: bool, executable: Option<&std::path::Path>) -> egui::ViewportBuilder {
++    if use_embedded_app_icon(macos, executable) {
 +        match eframe::icon_data::from_png_bytes(APP_ICON_PNG) {
 +            Ok(icon) => viewport = viewport.with_icon(icon),
 +            Err(e) => log::warn!("app icon: {e}"),
 +        }
-     }
-     if integrated {
-         viewport = viewport.with_fullsize_content_view(true).with_titlebar_shown(false).with_title_shown(false);
-@@ -361,6 +366,23 @@ fn native_options(integrated: bool, app_frame: bool, renderer: eframe::Renderer)
-     native
- }
- 
++    } else {
++        // None makes eframe substitute its own logo. Its explicit empty-icon sentinel
++        // suppresses AppTitleIconSetter, leaving AppKit's bundle/Finder icon intact.
++        viewport = viewport.with_icon(egui::IconData::default());
++    }
++    viewport
++}
++
 +fn use_embedded_app_icon(macos: bool, executable: Option<&std::path::Path>) -> bool {
 +    if !macos {
 +        return true;
@@ -256,13 +267,26 @@ index be2290d2f916b63a1ab55a57ba60d3c5d7b8b7e2..3c8d686763396aea4be82019e032a0f5
  #[derive(Clone)]
  struct Launch {
 diff --git a/apps/pdfcraft/src/tests.rs b/apps/pdfcraft/src/tests.rs
-index 3512f46b360fb6c6795318def91a6602246210b7..e9e1c2128d4cb3d8d68f042f359f2c7ce662ffec 100644
+index 3512f46b360fb6c6795318def91a6602246210b7..d3e0aaa0fade91148990b888991a626479e72113 100644
 --- a/apps/pdfcraft/src/tests.rs
 +++ b/apps/pdfcraft/src/tests.rs
-@@ -35,6 +35,25 @@ fn assert_window_stack_graph(root: &std::path::Path, name: &str, version: &str)
+@@ -35,6 +35,38 @@ fn assert_window_stack_graph(root: &std::path::Path, name: &str, version: &str)
  
  use pdfcraft_ui_egui::control::Endpoint;
  
++#[test]
++fn bundled_macos_viewport_explicitly_suppresses_eframes_default_icon() {
++    let bundled = std::path::Path::new("/Applications/PdfCraft.app/Contents/MacOS/pdfcraft");
++    let viewport = super::with_app_icon(egui::ViewportBuilder::default(), true, Some(bundled));
++    // eframe substitutes its logo for None. Some(IconData::default()) is its explicit
++    // no-icon sentinel: AppTitleIconSetter turns it into None before calling AppKit.
++    assert_eq!(viewport.icon.as_deref(), Some(&egui::IconData::default()));
++    for (macos, executable) in [(false, Some(bundled)), (true, Some(std::path::Path::new("/tmp/pdfcraft"))), (true, None)] {
++        let viewport = super::with_app_icon(egui::ViewportBuilder::default(), macos, executable);
++        assert!(viewport.icon.as_ref().is_some_and(|icon| icon.width > 0 && icon.height > 0 && !icon.rgba.is_empty()));
++    }
++}
++
 +#[test]
 +fn bundled_macos_launch_leaves_the_finder_icon_to_appkit() {
 +    use std::path::Path;
@@ -2754,10 +2778,10 @@ HcmV?d00001
 
 diff --git a/docs/local-integrations.md b/docs/local-integrations.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..ceadc5399ef20c17756079e793f362e2809db14a
+index 0000000000000000000000000000000000000000..004ca7e5cf96462859f0c9be670a15385761299a
 --- /dev/null
 +++ b/docs/local-integrations.md
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,80 @@
 +# Local integration and validation record
 +
 +This development build starts from upstream PdfCraft commit
@@ -2819,8 +2843,10 @@ index 0000000000000000000000000000000000000000..ceadc5399ef20c17756079e793f362e2
 +
 +A bundled macOS application leaves its icon to AppKit, preserving Finder icon
 +customization. Unbundled launches and other platforms retain the embedded icon.
-+The decision-path regression passed; native macOS Finder/Dock verification remains
-+pending.
++The viewport uses eframe's explicit empty-icon sentinel: leaving its icon unset
++would substitute the framework's logo. Both the bundle-path decision and the
++framework-boundary regression were observed failing before their respective
++corrections. Native macOS Finder/Dock verification remains pending.
 +
 +The interface's ArtCraft trademark mark is replaced by an existing generic
 +document icon, and trademarked brand artwork is omitted in accordance with the
