@@ -17,7 +17,9 @@ jobs:
     env:
       CARGO_BUILD_JOBS: 2
       CARGO_INCREMENTAL: 0
-      PDFCRAFT_SYSTEM_FONTS: 0
+      # Normal runtime font fallback is part of UI tests; this job publishes no
+      # screenshots. Published screenshots are separately built with it disabled.
+      PDFCRAFT_SYSTEM_FONTS: 1
     defaults:
       run:
         shell: bash
