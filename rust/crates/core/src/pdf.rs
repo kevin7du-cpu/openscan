@@ -27,6 +27,7 @@ pub fn export(
     let mut doc = Document::with_version("1.7");
     let root = doc.new_object_id();
     let mut kids = Vec::new();
+    let mut image_bytes = 0u64;
     for page in included {
         cancel.check()?;
         if !(75..=600).contains(&page.dpi) {
@@ -50,6 +51,12 @@ pub fn export(
                 .encode(rgb.as_raw(), width, height, image::ExtendedColorType::Rgb8)?;
             (encoded, "DeviceRGB")
         };
+        image_bytes = image_bytes.saturating_add(bytes.len() as u64);
+        if image_bytes > 512 * 1024 * 1024 {
+            return Err(error(
+                "This PDF's image data exceeds 512 MB. Export fewer pages or use a lower resolution/quality; originals remain in the session.",
+            ));
+        }
         let mut stream = Stream::new(
             dictionary! {"Type"=>"XObject","Subtype"=>"Image","Width"=>width,"Height"=>height,"ColorSpace"=>space,"BitsPerComponent"=>8},
             bytes,
