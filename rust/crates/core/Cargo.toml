@@ -1,0 +1,30 @@
+[package]
+name = "openscan-core"
+description = "Reusable Rust document scanner backends, correction and scan sessions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+[lints]
+workspace = true
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+image.workspace = true
+tiff = "0.11.3"
+imageproc = { version = "0.25", default-features = false }
+tempfile = "3.27"
+sha2 = "0.10"
+directories = "6"
+lopdf = { version = "0.45", default-features = false }
+ureq = { version = "3.5", default-features = false, features = ["rustls"] }
+roxmltree = "0.21"
+mdns-sd = "0.15"
+url = "2"
+ocrs = { version = "0.13.1", default-features = false, features = ["rten"] }
+rten = { version = "0.26.0", default-features = false, features = ["onnx_format", "rten_format"] }
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["Devices_Enumeration", "Devices_Scanners", "Storage", "Storage_Search", "Storage_Streams", "Foundation", "Foundation_Collections"] }
+windows-future = "0.3.2"
