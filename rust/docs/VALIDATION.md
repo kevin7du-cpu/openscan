@@ -28,8 +28,9 @@ Cross-platform CI completed at Rust source commit
 Linux's total includes an actual `scanimage` invocation against the installed SANE
 `test:0` driver, then processing and PDF export. The acquired A5 dimensions at 75 DPI
 are checked within one pixel, and an unsupported 100 DPI request is rejected before
-acquisition. Tests also cover source/mode-dependent options, resolution steps and
-paper bounds. Windows has an additional BMP-format selection test. The Windows CI
+acquisition. The backend queries source/mode-dependent options before scanning;
+tests cover resolution steps and paper bounds. Windows has an additional BMP-format
+selection test. The Windows CI
 release binary also passed the local real-model OCR test using models alongside the
 packaged executable, with independent PDFCraft extraction and rendering.
 
