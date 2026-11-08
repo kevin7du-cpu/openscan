@@ -12,10 +12,11 @@ keys, private discussion captures or personal settings.
 
 The dedicated integration workflow in this repository leaves PDFCraft's own CI
 unchanged. It builds and tests the native application, interface, engine and
-automation crates on Windows, Linux and macOS. It uses the Rust scanner binaries
-from [the passing scanner run](https://github.com/kevin7du-cpu/openscan/actions/runs/42421535463),
-verifies their hashes, and runs a real process-protocol preset round trip without
-requiring a physical scanner. Linux also checks the WebAssembly build.
+automation crates on Windows, Linux and macOS. It waits for the pinned Rust scanner
+build to finish successfully, verifies its source revision, records the downloaded
+binary hashes and checks release startup. It then runs a real process-protocol
+preset round trip without requiring a physical scanner. Both Linux binaries use
+the Ubuntu 24.04 baseline. Linux also checks the WebAssembly build.
 
 Native desktop interaction, real scanner acquisition and device-specific behavior
 remain separate checks. See the reconstructed source's `docs/local-integrations.md`

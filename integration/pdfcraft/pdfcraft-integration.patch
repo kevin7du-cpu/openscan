@@ -2042,6 +2042,54 @@ index 915d40e6ec36bc61e9461457baf1a82a23a9d646..bc01c58dc4f791a7c74d0a040e651e85
  }
  
  /// Where in a document a request to open an address came from.
+diff --git a/crates/ui-egui/src/theme.rs b/crates/ui-egui/src/theme.rs
+index c3ce3e0e59618974bd3bdec31b2ce8952b5b0393..09e1fae366546dc7db1cb215f0a6e22661b72631 100644
+--- a/crates/ui-egui/src/theme.rs
++++ b/crates/ui-egui/src/theme.rs
+@@ -403,6 +403,10 @@ fn font_definitions_for_platform(prefer_hans: bool, platform: FontPolicyPlatform
+             }
+         }
+     }
++    // PDF names with invalid bytes can contain U+FFFD. Inter and Ubuntu-Light
++    // lack it, while the already bundled JetBrains Mono face covers it. Keep it last
++    // so labels remain legible without optional or installed system fonts.
++    fonts.families.entry(FontFamily::Proportional).or_default().push("JetBrainsMono".to_owned());
+     let fallback: Vec<String> = fonts.families[&FontFamily::Proportional].clone();
+     for (fam, primary) in [("medium", "Inter-Medium"), ("semibold", "Inter-SemiBold")] {
+         let mut stack = vec![primary.to_owned()];
+diff --git a/crates/ui-egui/src/theme/tests.rs b/crates/ui-egui/src/theme/tests.rs
+index b624a19915378ec37803849617afa8aaf31256d1..7d0efd8c7b906ba412fed22b0edcb1792e30dca9 100644
+--- a/crates/ui-egui/src/theme/tests.rs
++++ b/crates/ui-egui/src/theme/tests.rs
+@@ -1,5 +1,28 @@
+ use super::*;
+ 
++/// A malformed PDF name can decode to U+FFFD. It must be legible even without
++/// optional craft-fonts or an installed system face (including on macOS).
++#[test]
++fn bundled_families_draw_the_replacement_character_without_system_fonts() {
++    for platform in [FontPolicyPlatform::Windows, FontPolicyPlatform::Other] {
++        let mut definitions = font_definitions_for_platform(false, platform);
++        let mut bundled: Vec<String> = FontDefinitions::default().font_data.into_keys().collect();
++        bundled.extend(["Inter", "Inter-Medium", "Inter-SemiBold", "JetBrainsMono"].map(str::to_owned));
++        definitions.font_data.retain(|name, _| bundled.contains(name));
++        for stack in definitions.families.values_mut() {
++            stack.retain(|name| bundled.contains(name));
++        }
++        let mut fonts = Fonts::new(TextOptions::default(), definitions);
++        fonts.set_missing_glyph_policy(egui::MissingGlyphPolicy::Panic);
++        assert!(fonts.has_glyph(&FontId::monospace(13.0), '\u{fffd}'), "bundled monospace fallback");
++        for (family, _) in primary_families() {
++            let rendered = galley(&mut fonts, family.clone(), 13.0, 1.0, "Dept\u{fffd}");
++            assert_eq!(rendered.text(), "Dept\u{fffd}");
++            assert!(fonts.has_glyph(&FontId::new(13.0, family), '\u{fffd}'));
++        }
++    }
++}
++
+ /// Arabic and Kurdish switch stock chrome to mirror from the right; English switches it
+ /// back. This is the `Style::right_to_left` half of the explicit RTL policy.
+ #[test]
 diff --git a/crates/ui-egui/src/widgets.rs b/crates/ui-egui/src/widgets.rs
 index f621c7832b0bf16e67d8580064522c9ccd508178..9d533e08c318969e5863a6929b08dd3d8ea9abf0 100644
 --- a/crates/ui-egui/src/widgets.rs
@@ -2778,10 +2826,10 @@ HcmV?d00001
 
 diff --git a/docs/local-integrations.md b/docs/local-integrations.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..004ca7e5cf96462859f0c9be670a15385761299a
+index 0000000000000000000000000000000000000000..8863b50509a02acdb959feba460c9f98f40fb0c6
 --- /dev/null
 +++ b/docs/local-integrations.md
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,88 @@
 +# Local integration and validation record
 +
 +This development build starts from upstream PdfCraft commit
@@ -2827,12 +2875,13 @@ index 0000000000000000000000000000000000000000..004ca7e5cf96462859f0c9be670a1538
 +process protocol. The same scanner binary can be reused by another application;
 +`openscan-core` and `openscan-ui` also support direct Rust integration.
 +
-+Windows, Linux and macOS scanner tests, strict Clippy and release builds passed at
-+`6b5947858ea71f4a946fa465b7122ae507779b20` in
-+[the recorded CI run](https://github.com/kevin7du-cpu/openscan/actions/runs/42421535463).
-+Linux exercised an installed SANE test backend with size and DPI checks. The Windows
-+release binary passed an offline OCR/PDF round trip with independent PdfCraft text
-+extraction and rendering. These checks do not establish real-device compatibility.
++The standalone scanner's [validation record](https://github.com/kevin7du-cpu/openscan/blob/rust-portability/rust/docs/VALIDATION.md)
++identifies its tested revisions and native build results. Its Linux build uses the
++Ubuntu 24.04 baseline: an earlier ubuntu-latest artifact required GLIBC 2.43 and
++could not start on the application's Ubuntu 24.04 test runner. Scanner validation
++includes an installed SANE test backend with size and DPI checks. OCR/PDF tests
++use the real models and independent PdfCraft text extraction and rendering.
++These checks do not establish real-device compatibility.
 +See [scanner capabilities and limits](scanner.md).
 +
 +## Other local corrections
@@ -2847,6 +2896,13 @@ index 0000000000000000000000000000000000000000..004ca7e5cf96462859f0c9be670a1538
 +would substitute the framework's logo. Both the bundle-path decision and the
 +framework-boundary regression were observed failing before their respective
 +corrections. Native macOS Finder/Dock verification remains pending.
++
++The UI's bundled proportional font fallback now includes the existing JetBrains Mono
++face for the replacement character U+FFFD, including the medium and semibold
++families. A native macOS test exposed that the usual installed faces did not
++cover this character. The regression reproduces the missing glyph with optional
++and system fonts removed; no new font asset is added and strict glyph checks
++remain enabled. The normal renderer otherwise displayed a missing-glyph box.
 +
 +The interface's ArtCraft trademark mark is replaced by an existing generic
 +document icon, and trademarked brand artwork is omitted in accordance with the
