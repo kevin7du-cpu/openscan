@@ -58,33 +58,40 @@ jobs:
           rustup toolchain install stable --profile minimal --component rustfmt --component clippy
           rustup default stable
           rustup target add wasm32-unknown-unknown
-      - name: Download the tested Rust scanner
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: kevin7du-cpu/openscan
-        run: gh run download 42421535463 --name openscan-${{ runner.os }}-${{ runner.arch }} --dir scanner-artifact
-      - name: Verify and select the scanner binary
-        run: |
-          set -euo pipefail
-          case "${{ runner.os }}" in
-            Windows) binary=openscan.exe; expected=5875f4b73f5fa1b2b7e58bb9e2f2049b1bf51d37e6d726286f45e8f503dda969 ;;
-            Linux) binary=openscan; expected=a50f1e148e01199a0b06b900a5b0ec6bf6f3cb6781f8c10d4f01e41695bc5f76 ;;
-            macOS) binary=openscan; expected=ab7defd3161b1c4c07500baf727c9f80b4e94de17bfaac4405aaffb9c34b4207 ;;
-            *) exit 1 ;;
-          esac
-          path="$PWD/scanner-artifact/target/release/$binary"
-          if command -v sha256sum >/dev/null; then actual=$(sha256sum "$path" | cut -d ' ' -f 1); else actual=$(shasum -a 256 "$path" | cut -d ' ' -f 1); fi
-          test "$actual" = "$expected"
-          chmod +x "$path"
-          # Rust's Windows path parser needs an absolute Windows path, not MSYS /d/... .
-          if [ "${{ runner.os }}" = Windows ]; then path=$(cygpath -m "$path"); fi
-          printf 'PDFCRAFT_SCANNER=%s\n' "$path" >> "$GITHUB_ENV"
       - name: Formatting
         working-directory: pdfcraft
         run: cargo fmt --all --check
       - name: Application, interface, engine and automation tests
         working-directory: pdfcraft
         run: cargo test --locked --profile low-disk -p pdfcraft -p pdfcraft-ui-egui -p pdfcraft-engine -p pdfcraft-automation -- --test-threads=1
+      - name: Download the tested Rust scanner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: kevin7du-cpu/openscan
+        run: |
+          set -euo pipefail
+          # Only the completed build of the exact scanner source may be used.
+          test "$(gh run view 42430141576 --json headSha --jq .headSha)" = 8677344d5780305f9cb17fe91eb5d5f3c0000b2a
+          gh run watch 42430141576 --exit-status --interval 30
+          gh run download 42430141576 --name openscan-${{ runner.os }}-${{ runner.arch }} --dir scanner-artifact
+      - name: Verify and select the scanner binary
+        run: |
+          set -euo pipefail
+          case "${{ runner.os }}" in
+            Windows) binary=openscan.exe ;;
+            Linux|macOS) binary=openscan ;;
+            *) exit 1 ;;
+          esac
+          path="$PWD/scanner-artifact/target/release/$binary"
+          if command -v sha256sum >/dev/null; then actual=$(sha256sum "$path" | cut -d ' ' -f 1); else actual=$(shasum -a 256 "$path" | cut -d ' ' -f 1); fi
+          printf 'Scanner source: 8677344d5780305f9cb17fe91eb5d5f3c0000b2a; binary SHA-256: %s\n' "$actual"
+          chmod +x "$path"
+          # Detect missing system libraries before the adapter consumes JSON.
+          "$path" version
+          printf '{"source":"8677344d5780305f9cb17fe91eb5d5f3c0000b2a","run":42430141576,"sha256":"%s"}\n' "$actual" > scanner-identity.json
+          # Rust's Windows path parser needs an absolute Windows path, not MSYS /d/... .
+          if [ "${{ runner.os }}" = Windows ]; then path=$(cygpath -m "$path"); fi
+          printf 'PDFCRAFT_SCANNER=%s\n' "$path" >> "$GITHUB_ENV"
       - name: Real companion protocol and preset round trip
         working-directory: pdfcraft
         run: cargo test --locked --profile low-disk -p pdfcraft-automation --lib scanner_presets_round_trip_through_the_companion -- --ignored --test-threads=1
@@ -104,6 +111,22 @@ jobs:
       - name: Build the native application and CLI
         working-directory: pdfcraft
         run: cargo build --locked --profile low-disk -p pdfcraft -p pdfcraft-cli
+      - name: Final preset and OCR interoperability
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $suffix=if ($IsWindows) { '.exe' } else { '' }
+          $cli=Join-Path $PWD ('pdfcraft/target/low-disk/pdfcraft-cli'+$suffix)
+          & ./integration/smoke/interop-smoke.ps1 -PdfCraftCli $cli -Scanner $env:PDFCRAFT_SCANNER -Directory (Join-Path $PWD 'test-output')
+      - name: Save synthetic interoperability results
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: interop-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            test-output/summary.json
+            test-output/searchable.pdf
+            test-output/searchable.png
+          if-no-files-found: error
       - name: Save tested native binaries and provenance
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -119,4 +142,5 @@ jobs:
             pdfcraft/ATTRIBUTION.md
             pdfcraft/licenses/
             integration/pdfcraft/
+            scanner-identity.json
           if-no-files-found: error
