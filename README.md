@@ -23,16 +23,17 @@ the scanner model; macOS Image Capture and TWAIN are not implemented.
 
 ## Verification
 
-[Windows, Linux and macOS checks passed](https://github.com/kevin7du-cpu/openscan/actions/runs/42421535463)
-for Rust source commit `6b5947858ea71f4a946fa465b7122ae507779b20`: formatting,
-tests, strict Clippy and optimized native builds. Linux also acquired and exported
-a page from SANE's installed test driver with the requested page size and resolution.
-A Windows optimized build passed OCR export followed by independent PDFCraft text
-extraction and rendering.
+[Windows, Linux and macOS scanner checks passed](https://github.com/kevin7du-cpu/openscan/actions/runs/42430141576) for Rust source
+commit `8677344d5780305f9cb17fe91eb5d5f3c0000b2a`: formatting, tests, strict Clippy, optimized native builds
+and release startup. Linux uses Ubuntu 24.04 and an installed SANE test driver.
+
+[Native PDFCraft interoperability passed](https://github.com/kevin7du-cpu/openscan/actions/runs/42431338625) on all three platforms:
+seven preset, validation and real-model OCR/PDF round-trip checks per platform.
+PDFCraft independently extracted the expected text and rendered the generated PDF.
 
 Physical scanning through the new Rust build and native GUI checks remain pending.
-See [validation details](rust/docs/VALIDATION.md). Compilation and synthetic drivers
-are not evidence that every real scanner works.
+See [validation details](rust/docs/VALIDATION.md) for exact runners and coverage.
+Compilation and synthetic drivers are not evidence that every real scanner works.
 
 The earlier C# implementation remains in this repository for historical reference.
 It is not required to build or run the Rust module.
