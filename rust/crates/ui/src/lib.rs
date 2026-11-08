@@ -100,9 +100,16 @@ impl ScanPanel {
                 self.pages(&mut cols[1], &mut actions);
             });
         } else {
+            // At the 480-point minimum width the six scan actions wrap onto two
+            // 30-point rows. Reserve both rows so Close stays outside the scroller.
+            let footer_space = if self.presets_only || self.busy {
+                64.
+            } else {
+                96.
+            };
             egui::ScrollArea::vertical()
                 .id_salt("scan-settings-narrow")
-                .max_height((ui.available_height() - 64.).max(150.))
+                .max_height((ui.available_height() - footer_space).max(150.))
                 .show(ui, |ui| {
                     self.settings(ui, &mut actions);
                     if !self.presets_only {
