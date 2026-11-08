@@ -46,3 +46,28 @@ fn preset_and_scan_panels_render_at_narrow_and_wide_sizes() {
         }
     }
 }
+
+#[test]
+fn narrow_scan_footer_keeps_close_completely_inside_the_window() {
+    for height in [450., 820., 900.] {
+        let panel = ScanPanel::new(false, None);
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(480., height))
+            .build_ui_state(
+                |ui, state: &mut (ScanPanel, Vec<Action>)| {
+                    openscan_ui::dialog_style(ui);
+                    state.1.extend(state.0.show(ui));
+                },
+                (panel, Vec::new()),
+            );
+        h.run();
+        let close = h.get_by_label("Close").rect();
+        assert!(
+            close.bottom() <= height,
+            "Close is clipped at height {height}: {close:?}"
+        );
+        h.get_by_label("Close").click();
+        h.run();
+        assert!(matches!(h.state().1.last(), Some(Action::Close)));
+    }
+}
