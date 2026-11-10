@@ -1,0 +1,36 @@
+[package]
+name = "openscan-egui"
+version = "0.2.7"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+description = "Reusable native egui scanning panel, preserving the OpenScan workflow"
+publish = false
+
+[features]
+default = []
+standalone = ["dep:eframe"]
+
+[dependencies]
+egui-office-widgets = { path = "../.." }
+scan-module = { path = "../scan-module", features = ["documents"] }
+egui = "=0.37.0"
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+rfd = "=0.18.0"
+anyhow = "=1.0.104"
+uuid = { version = "=1.29.1", features = ["v4"] }
+eframe = { version = "=0.37.0", default-features = false, features = ["accesskit", "default_fonts", "wgpu", "wayland", "x11"], optional = true }
+
+[[example]]
+name = "standalone"
+required-features = ["standalone"]
+
+[dev-dependencies]
+egui = { version = "=0.37.0", features = ["default_fonts"] }
+tempfile = "=3.27.0"
+egui_kittest = { version = "=0.37.0", default-features = false, features = ["wgpu"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+[lints.clippy]
+all = "warn"

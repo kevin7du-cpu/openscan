@@ -1,73 +1,80 @@
-# OpenScan process API, protocol version 1
+# Rust API
 
-Run `OpenScan.exe COMMAND`. All non-GUI requests are JSON on stdin; close stdin
-after writing. One JSON response is written to stdout. Drain stderr separately
-(OCR may report diagnostics there). No listening port, server or shell is needed.
-Use your language's argument-list subprocess API, not shell string concatenation.
+The reusable libraries replace the old C# process interface. They do not require
+a subprocess, local server, PaperDesk, C# or .NET.
 
-Every response contains `protocolVersion: 1` and `ok`. Error responses include
-`error`; exit code 1 means failure. A partial scan returns exit code 2 with
-`result.warning`, a recoverable session directory and any saved partial output.
-GUI cancellation is a successful reply with `cancelled: true, path: null`.
+## ver0.2.7 additions
 
-| Command | Request | Response data |
-|---|---|---|
-| `version` | None | Module version, drivers and OCR availability |
-| `devices` | None | `devices: [{id,name,driver}]` |
-| `capabilities` | `{ "deviceId": "…" }` | `capabilities.sources` with source/resolutions |
-| `dialog --return-json` | None | Scan/review window, then `{path,cancelled}` |
-| `presets-dialog` | None | Preset manager; returns after closing |
-| `scan` | `{profile,output,sessionDirectory?}` | Saved PDF, session and acquisition result |
-| `process` | `{profile,images:[paths],output}` | Correct imported images, save PDF, return session/pages |
-| `presets` | None | Presets from the default local store |
-| `preset-list` | `{directory}` | Presets from a specified store |
-| `preset-save` | `{profile,overwrite?:false,directory?}` | Save success |
-| `preset-delete` | `{name,directory?}` | Delete success |
+- `processing::balanced_black_white` exposes DPI-aware balanced Sauvola independently of acquisition.
+- `documents::clean_copy::prepare` retains every region as scanned ink by default. `render_with_options_at_dpi` takes current working pixels, reviewed word bounds, options, actual DPI and a cancellation token; unknown content is retained. Existing wrappers use 300 DPI.
+- `history::ScanHistory` records committed session changes for exact Undo/Redo. Originals are retained; history is bounded and lasts for the open session.
+- `documents::ocr::session_words` shares image/model-addressed OCR with cleanup, searchable export and hosts requesting notes.
+- `OpenScanUi::enable_filing_formats` exposes PDF/JPEG filing; the host reads `filing_format` on acceptance. `enable_scan_notes` exposes the Scan Note event; the host supplies the editor.
+- The panel owns worker progress/cancellation, saved correction preferences, zoom, current-page review and compact labeled Undo/Redo. New defaults do not silently alter saved scans.
 
-`dialog --session DIRECTORY` reopens a retained session. `process` accepts single
-frame images; the GUI import also expands multi-page TIFF files. PNG/JPEG export
-is exposed in `PdfWriter.ExportImages`; the GUI's image export uses PNG.
+See [quality/defaults](../crates/scan-module/docs/SCAN_QUALITY.md) and the crate READMEs for contracts and examples. The shared local `egui-office-widgets` dependency is included in this repository and has no PaperDesk dependency.
 
-Example profile (all fields other than a device for physical acquisition have defaults):
+## Core
 
-```json
-{
-  "schemaVersion": 1,
-  "name": "Office documents",
-  "deviceId": "ID returned by devices",
-  "source": "duplex",
-  "color": "grayscale",
-  "paper": "letter",
-  "dpi": 300,
-  "maxPages": 100,
-  "nativeInterface": false,
-  "flipDuplexBacks": false,
-  "searchablePdf": true,
-  "jpegQuality": 90,
-  "cleanup": {
-    "deskew": true,
-    "autoCrop": false,
-    "removeBackground": false,
-    "denoise": true,
-    "sharpen": false,
-    "skipBlankPages": true,
-    "blankInkPercent": 0.08,
-    "brightness": 0,
-    "contrast": 0,
-    "rotateDegrees": 0
-  }
-}
-```
+`scan-module` exposes:
 
-Sources: `flatbed`, `feeder`, `duplex`. Colors: `color`, `grayscale`, `blackWhite`.
-Paper: `letter`, `a4`, `legal`, `a5`. Brightness/contrast: −100…100. Rotation:
-0/90/180/270. Unknown JSON fields are rejected to catch integration mistakes.
-Headless `scan` does not allow `nativeInterface: true`.
+| API | Responsibility |
+|---|---|
+| `ScannerBackend` | Driver discovery, capabilities and blocking acquisition |
+| `native_backend()` | WIA on Windows; SANE process adapter on Linux/macOS |
+| `spawn_scan(backend, request)` | Background acquisition with progress, result and cancellation |
+| `ScanProfile`, `ScanSettings` | Validated acquisition/correction/export settings |
+| `PresetStore` | Atomic JSON save/load, explicit replace, rename and archived deletion |
+| `ScanSession` | Import/acquire, immutable originals, corrections, order/inclusion, recovery and image export |
+| `processing::correct` | Shared Rust image corrections |
+| `documents::ocr::LocalOcr` | Verified local model loading and OCR |
+| `documents::pdf` | Image/searchable PDF, no-overwrite save, append as a new copy |
 
-Do not assume `ok:true` merely because a process exited. Check the protocol and
-response. Retain the full bundle, and verify the returned file exists before opening
-it. The PdfCraft adapter bounds responses to 4 MB and headless calls to 15 minutes.
-The UI has no arbitrary timeout. Run one physical acquisition at a time per device.
+Enable the `documents` feature for the last two APIs. The
+[core README](../crates/scan-module/README.md) includes a compiling acquisition example.
+The [workflow example](../crates/scan-module/examples/verify_workflow.rs) demonstrates
+import, correction, durable recovery, real OCR, PDF and PNG export independently of
+any GUI or catalog.
 
-This is a local trusted-host API, not a network service or a sandbox. Hosts must
-enforce their own allowed filesystem roots before submitting file paths.
+Run synchronous operations on a worker thread. Reuse the same
+`CancellationToken` across processing stages and observe progress.
+`ScanSettings::from(&profile)` enables programmatic settings;
+`ScanSettings::default()` retains driver-dialog compatibility on Windows.
+Use a new/empty acquisition output directory. Check the returned
+`ScanBatch.cancelled` and `warning` as well as its completed pages.
+
+`ScanProfile` uses the original camelCase version-1 JSON schema. Unknown fields,
+unknown enum values and invalid settings fail explicitly. Host applications own
+their allowed filesystem locations; these APIs are local trusted-host APIs.
+
+`ExportDocument`, `ExportPage` and `TextLine` accept host-reviewed text and metadata.
+Coordinates are image pixels; the PDF adapter maps them using page DPI.
+Standalone export performs OCR directly, so a host requiring mandatory review
+must implement that gate before export.
+
+## egui panel
+
+`OpenScanUi::new(storage_directory, models_directory)` creates the panel;
+`with_backend` accepts a custom or mock `ScannerBackend`.
+Keep one panel for the host lifetime and call `show(ui)` every frame.
+
+- `set_accept_label("Use these pages")` enables a host handoff action.
+- `take_events()` drains `Accepted(ScanSession)` and `Exported(PathBuf)`.
+- `import_images(paths)` and `open_session(directory)` accept host-supplied input.
+- Submit work only when `!is_busy()`; keep calling `show` to drain worker events.
+- Before closing a busy host, request `cancel()` and wait for `!is_busy()`.
+
+Sessions and output files stay caller-owned; accepted/exported events do not
+delete them. Copy the adjacent crates together (including licenses and font
+assets) or point Cargo to the repository. No host-global font resolver is needed.
+
+See the [complete eframe/wgpu host](../crates/openscan-egui/examples/standalone.rs).
+The standalone executable accepts `--storage` and `--models`; it does not implement
+the historical `OpenScan.exe COMMAND` JSON protocol.
+
+## Migration
+
+Original profile JSON is supported. Legacy session manifests can be read when
+their referenced files remain inside the same session directory; new manifests
+use relative paths. Back up existing sessions before migrating.
+See [MIGRATION.md](MIGRATION.md) for retained historical examples and API boundaries.

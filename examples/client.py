@@ -1,4 +1,8 @@
-"""Use the already-built module from Python; no scanner code is rebuilt."""
+"""Historical C# protocol-v1 client, retained for existing release users.
+
+This is not compatible with the Rust standalone example. New integrations should
+use the Rust core/panel APIs documented in docs/API.md and docs/MIGRATION.md.
+"""
 import json
 import subprocess
 from pathlib import Path

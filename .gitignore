@@ -1,9 +1,14 @@
+/target/
+/test-output/
+/.tools/
+/dist/
+/work/
+/models/*.rten
+/models/*.partial
+# Historical local C# build output; never ship it with the Rust module.
 **/bin/
 **/obj/
-dist/
-work/
-.tools/
 *.user
-native/win-x64/
-resources/fonts/
-resources/tessdata/*.traineddata
+/native/win-x64/
+/resources/fonts/
+/resources/tessdata/*.traineddata

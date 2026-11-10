@@ -1,0 +1,58 @@
+[package]
+name = "scan-module"
+version = "0.2.7"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+description = "Reusable Rust scanner acquisition API with WIA and SANE adapters"
+publish = false
+
+[features]
+default = []
+documents = ["dep:anyhow", "dep:ocrs", "dep:rten", "dep:lopdf", "dep:ttf-parser", "dep:ab_glyph", "dep:fax", "dep:jbig2enc-rust", "dep:hayro-jbig2", "dep:subsetter", "imageproc/text"]
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "bmp", "tiff", "webp"] }
+imageproc = { version = "=0.27.0", default-features = false }
+sha2 = "=0.11.1"
+tempfile = "=3.27.0"
+uuid = { version = "=1.29.1", features = ["v4"] }
+tiff = "=0.11.3"
+png = "=0.18.1"
+anyhow = { version = "=1.0.104", optional = true }
+ocrs = { version = "=0.13.1", default-features = false, features = ["rten"], optional = true }
+rten = { version = "=0.26.0", default-features = false, features = ["rten_format"], optional = true }
+lopdf = { version = "=0.47.0", default-features = false, optional = true }
+ttf-parser = { version = "=0.25.1", optional = true }
+ab_glyph = { version = "=0.2.32", optional = true }
+fax = { version = "=0.3.0", default-features = false, optional = true }
+jbig2enc-rust = { version = "=0.5.4", default-features = false, features = ["encode"], optional = true }
+hayro-jbig2 = { version = "=0.4.0", optional = true }
+subsetter = { version = "=0.2.6", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-core = "=0.62.2"
+windows = { version = "=0.62.2", features = ["Win32_Devices_ImageAcquisition", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_Foundation", "Win32_UI_Shell", "Win32_Storage_FileSystem"] }
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+
+[[example]]
+name = "clean_page"
+required-features = ["documents"]
+
+[[example]]
+name = "despeckle_page"
+required-features = ["documents"]
+
+[[example]]
+name = "balanced_cleanup"
+required-features = ["documents"]
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+all = "warn"

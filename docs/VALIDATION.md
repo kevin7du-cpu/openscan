@@ -1,27 +1,22 @@
-# Validation — 2026-11-07
+# OpenScan ver0.2.7 validation
 
-Windows x64; .NET SDK 10.0.403. OpenCV 4.13.0 and the pinned OpenCvSharp wrapper
-were compiled using GCC 16.2 with core, imgproc and imgcodecs only. IPP, nonfree
-algorithms, OpenCL and video/FFmpeg are disabled.
+The independent workspace is tested without PaperDesk as a dependency. Rust 1.99.1 was used on Windows. Its external dependency versions/checksums are a subset of the tested host lockfile; no new external versions were introduced.
 
-`build.ps1 -Test` passes 33 checks: transfer streams positioned at EOF; empty
-transfer rejection; measured 4.5-degree deskew; preserved originals; blank-page
-detection; cropping; binary black-and-white cleanup; settings validation;
-preset create/read/edit/delete and overwrite protection; session recovery;
-non-destructive rotation and correction; PDF page size; append and overwrite
-safety; cancellation; pages retained after a simulated paper jam; searchable
-OCR; minimal native runtime; and use of the bundled OFL font in PDF output.
+| Check | Observed result |
+|---|---|
+| Core without documents | Release-profile compilation passed |
+| Independent Windows suite | 90 tests passed; optional GPU capture excluded from normal suite |
+| Doctests | Two passed |
+| Strict Clippy / formatting | All workspace targets/features passed |
+| Standalone eframe/wgpu example | Release build and --help passed |
+| Compact arrow UI | Separately rendered with wgpu and visually checked; labels align with neighboring buttons |
+| Shared scanner code on Ubuntu | The host's 131-test native suite passed, including core, processing, history and panel tests; the independent standalone binary has not been run on Ubuntu |
+| Real cleanup/export on Ubuntu | Three grayscale inputs and one corrected Black & White input; originals and all pixels outside OCR regions unchanged; independent Poppler PDF extraction pixel-identical |
+| Acquisition | Fujitsu fi-7030 user-confirmed in Ubuntu on an earlier Rust release; ver0.2.7 physical acquisition still pending |
+| macOS | Earlier cross-build/package checks only; native launch and acquisition remain pending |
 
-Physical validation:
+The host Windows suite passed 132 tests before the final compact-arrow visual refinement. Linux host package installation/launch passed with existing saved files preserved. These host checks do not imply every independent distribution/platform has been installed. The GitHub workflow is manual and has not been run for this publication.
 
-- A fi-7030 produced a color Letter feeder scan at 300 DPI. The PDF rendered
-  successfully. The retained original also passed background cleanup and OCR.
-- HP Smart Tank 7600 discovery and capability reads succeeded. Its reported
-  flatbed/feeder capabilities were shown in the selection UI.
-- The Scan window imported a synthetic skewed image, displayed its correction,
-  saved a PDF and returned it to a normal PdfCraft document tab.
-- Preset CRUD through PdfCraft's JSON adapter passed without operating hardware.
+Tests use synthetic text, punctuation, thin rules, diagonal ink, barcodes, color and halftone fixtures. The real scans are private and are not published. OCR Clean changed 8,283 / 206 / 65,220 / 0 pixels on the four native samples; the conservative no-op is intentional. This does not prove complete wrinkle removal or semantic layout classification.
 
-HP acquisition, physical duplex acquisition, other scanner models and operating
-systems have not been validated. No physical test pages, personal documents,
-device identifiers or recovery sessions are included in the repository.
+Run the reproducible commands in README.md and inspect crates/scan-module/tests, crates/openscan-egui/tests and the examples. See crates/scan-module/docs/SCAN_QUALITY.md for defaults, tuning evidence and known limitations.

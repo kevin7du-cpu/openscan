@@ -1,0 +1,48 @@
+[package]
+name = "egui-office-widgets"
+version = "0.2.7"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+description = "Reusable office-style egui controls and an interaction gallery"
+publish = false
+
+[workspace]
+members = ["crates/scan-module", "crates/openscan-egui"]
+resolver = "3"
+
+[profile.dev.package.rten]
+opt-level = 3
+[profile.dev.package.rten-gemm]
+opt-level = 3
+[profile.dev.package.rten-tensor]
+opt-level = 3
+[profile.dev.package.rten-simd]
+opt-level = 3
+[profile.dev.package.rten-vecmath]
+opt-level = 3
+[profile.dev.package.ocrs]
+opt-level = 2
+
+[features]
+default = []
+gallery = ["dep:eframe"]
+
+[dependencies]
+eframe = { version = "=0.37.0", optional = true, default-features = false, features = ["accesskit", "default_fonts", "wgpu", "wayland", "x11"] }
+egui = { version = "=0.37.0", default-features = false }
+
+[dev-dependencies]
+egui = { version = "=0.37.0", features = ["default_fonts"] }
+egui_kittest = { version = "=0.37.0", default-features = false }
+
+[[example]]
+name = "gallery"
+required-features = ["gallery"]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "warn"

@@ -1,4 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>Exe</OutputType><AssemblyName>OpenScan</AssemblyName></PropertyGroup>
-  <ItemGroup><ProjectReference Include="../OpenScan.Core/OpenScan.Core.csproj" /></ItemGroup>
-</Project>
