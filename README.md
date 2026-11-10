@@ -1,4 +1,4 @@
-# OpenScan â€” reusable Rust scanner module
+# OpenScan by Rust & egui/eframe - ver0.2.7
 
 OpenScan is a reusable Rust module for Windows, Linux, and macOS, with an optional
 native **egui / eframe / wgpu** scanning interface. The framework is named eframe (sometimes called eframework). Applications can embed the core

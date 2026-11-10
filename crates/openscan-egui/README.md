@@ -20,7 +20,7 @@ The example uses eframe and **wgpu**. These are optional host dependencies; the 
 
 `with_backend` accepts any `Box<dyn ScannerBackend>`, including a mock. `import_images` and `open_session` let a host provide input; submit only when `!is_busy()`. Keep calling `show` to drain progress/events. Before closing a busy host, call `cancel()` and wait for `!is_busy()`. Completed pages remain recoverable.
 
-Menus, presets and wrapping Scan/File as/import/export/Cancel actions sit above the workspace. Bottom-right zoom offers 1Ã¢â‚¬â€œ400%, Fit, scrolling and drag-to-pan without editing scan pixels. Worker previews retain up to 4096 pixels per side within the renderer limit. Preset management retains its established controls.
+Menus, presets and wrapping Scan/File as/import/export/Cancel actions sit above the workspace. Bottom-right zoom offers 1–400%, Fit, scrolling and drag-to-pan without editing scan pixels. Worker previews retain up to 4096 pixels per side within the renderer limit. Preset management retains its established controls.
 
 Hosts implementing PDF/JPEG filing call `enable_filing_formats()` and read `filing_format()` when consuming Accepted; PDF is the default. Existing `set_accept_label` hosts keep their original acceptance API. The host owns its catalog and creates the chosen file format.
 
