@@ -372,7 +372,7 @@ impl OpenScanUi {
             if ui.add_enabled(self.can_scan(),egui::Button::new("Scan")).clicked(){self.scan();}
             if let Some(label)=&self.accept_label
                 && ui.add_enabled(included,egui::Button::new(label))
-                    .on_hover_text("Save in the selected PaperDesk folder using the chosen format. PDF combines included pages; JPG creates one image per page. Originals are preserved.").clicked()
+                    .on_hover_text("Send included pages to this application. Use its save or filing controls to choose a destination. Originals are preserved.").clicked()
                 && let Some(session)=&self.session {self.events.push(OpenScanEvent::Accepted(session.clone()));}
             if let Some(format)=&mut self.filing_format {
                 use scan_module::ScanFileFormat;
@@ -477,7 +477,7 @@ impl OpenScanUi {
                     if ui.add_enabled(self.selected+1<count,egui::Button::new("Move down")).clicked(){let next=self.selected+1;self.submit(Command::Move(self.selected,next),"Reordering pages");self.selected=next;}
                     if ui.button("Del").accessible_name("Delete selected page").on_hover_text("Delete the selected page from this scan. Undo restores it.").clicked(){self.delete_page(self.selected);}
                     if ui.button("OCR Clean").on_hover_text("Whiten paper, reduce wrinkle shadows and remove isolated specks while preserving printed text. Review before Apply; Undo restores the scan.").clicked(){let max_side=ctx.input(|i|i.max_texture_side).clamp(1,4096) as u32;self.submit(Command::PrepareClean(self.selected,max_side),"Preparing OCR clean copy");}
-                    if self.scan_notes && ui.button("Scan Note").on_hover_text("Open text from all included scan pages in PaperDesk's notepad. Reuse OCR when available; recognize missing text automatically. Formatting is optional.").clicked()
+                    if self.scan_notes && ui.button("Scan Note").on_hover_text("Open text from all included scan pages in this application's note editor. Reuse OCR when available; recognize missing text automatically.").clicked()
                         && let Some(session) = &self.session { self.events.push(OpenScanEvent::ScanNote(session.clone())); }
                 });});});
                 egui::Panel::bottom(format!("scan-details-{}",self.instance)).show(ui,|ui|{
