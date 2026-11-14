@@ -1,8 +1,8 @@
 //! Compact correction settings; storage stays on the scanner worker.
-use super::{OpenScanUi, enum_choice, worker::Command};
+use super::{LegacyOpenScanUi, enum_choice, worker::Command};
 use scan_module::CleanupOptions;
 
-impl OpenScanUi {
+impl LegacyOpenScanUi {
     pub(super) fn correction_window(&mut self, ctx: &egui::Context) {
         let Some(options) = &mut self.correction_editor else {
             return;

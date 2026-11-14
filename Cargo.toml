@@ -1,6 +1,6 @@
 [package]
 name = "egui-office-widgets"
-version = "0.2.7"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT OR Apache-2.0"
@@ -8,7 +8,7 @@ description = "Reusable office-style egui controls and an interaction gallery"
 publish = false
 
 [workspace]
-members = ["crates/scan-module", "crates/openscan-egui"]
+members = ["crates/scan-module", "crates/openscan-egui", "crates/openscan-core"]
 resolver = "3"
 
 [profile.dev.package.rten]

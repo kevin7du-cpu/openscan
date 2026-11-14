@@ -1,6 +1,6 @@
 [package]
 name = "openscan-egui"
-version = "0.2.7"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT OR Apache-2.0"
@@ -12,6 +12,8 @@ default = []
 standalone = ["dep:eframe"]
 
 [dependencies]
+openscan-core = { path = "../openscan-core", features = ["rust-ocr"] }
+lopdf = "=0.34.0"
 egui-office-widgets = { path = "../.." }
 scan-module = { path = "../scan-module", features = ["documents"] }
 egui = "=0.37.0"
@@ -34,3 +36,8 @@ egui_kittest = { version = "=0.37.0", default-features = false, features = ["wgp
 unsafe_code = "forbid"
 [lints.clippy]
 all = "warn"
+
+[[bin]]
+name = "openscan"
+path = "src/bin/openscan.rs"
+required-features = ["standalone"]

@@ -1,3 +1,14 @@
+# 0.3.0 — accepted Scan Module workflow
+
+- Promoted the Scan Module 0.1.3 scan/holding interface and cleanup pipeline.
+- Kept 110% controls, 65% initial holding window, Scan more Pages and Done.
+- Added reusable GUI-independent openscan-core and embeddable egui 0.37 UI.
+- Direct Rust WIA by default on Windows; no required C#/.NET adapter.
+- Preserved original bytes and corrected pages in compatible durable sessions.
+- Background discovery, scanning, preview preparation, cleanup, OCR and output.
+- Atomic PDF publication, safe append, host completion events and session reopen.
+- The former interface remains available as LegacyOpenScanUi.
+
 # OpenScan changes
 
 ## ver0.2.7 — Rust and egui/eframe

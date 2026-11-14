@@ -36,8 +36,9 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1180.0, 840.0])
-            .with_min_inner_size([1000.0, 650.0]),
+            .with_inner_size([1100.0, 780.0])
+            .with_min_inner_size([400.0, 300.0])
+            .with_maximized(false),
         ..Default::default()
     };
     eframe::run_native(
@@ -46,7 +47,7 @@ fn main() -> eframe::Result {
         Box::new(move |cc| {
             cc.egui_ctx.set_theme(egui::ThemePreference::Light);
             Ok(Box::new(App {
-                scanner: openscan_egui::OpenScanUi::new(paths.storage, paths.models),
+                scanner: openscan_egui::OpenScanUi::new(paths.storage, paths.models).standalone(),
                 closing: false,
             }))
         }),

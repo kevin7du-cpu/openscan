@@ -25,7 +25,7 @@ impl ScannerBackend for NoScanner {
         unreachable!()
     }
 }
-fn settle(h: &mut Harness<'_, OpenScanUi>) {
+fn settle(h: &mut Harness<'_, LegacyOpenScanUi>) {
     let start = Instant::now();
     loop {
         h.step();
@@ -44,12 +44,12 @@ fn settle(h: &mut Harness<'_, OpenScanUi>) {
     }
     h.run();
 }
-fn panel(temp: &tempfile::TempDir) -> Harness<'static, OpenScanUi> {
+fn panel(temp: &tempfile::TempDir) -> Harness<'static, LegacyOpenScanUi> {
     let source = temp.path().join("source.png");
     image::RgbImage::from_fn(80, 120, |x, y| image::Rgb([x as u8, y as u8, 150]))
         .save(&source)
         .unwrap();
-    let mut panel = OpenScanUi::with_backend(
+    let mut panel = LegacyOpenScanUi::with_backend(
         temp.path().join("scan"),
         temp.path().join("models"),
         Box::new(NoScanner),
@@ -57,7 +57,7 @@ fn panel(temp: &tempfile::TempDir) -> Harness<'static, OpenScanUi> {
     panel.profile.cleanup.deskew = false;
     let mut h = Harness::builder()
         .with_size(egui::vec2(1180., 840.))
-        .build_ui_state(|ui, p: &mut OpenScanUi| p.show(ui), panel);
+        .build_ui_state(|ui, p: &mut LegacyOpenScanUi| p.show(ui), panel);
     settle(&mut h);
     assert!(
         !h.state().profile.cleanup.deskew,
@@ -98,14 +98,14 @@ fn correction_dialog_saves_reloads_and_cancel_keeps_previous_choices() {
     h.run();
     assert_eq!(h.state().profile.cleanup, saved);
     drop(h);
-    let panel = OpenScanUi::with_backend(
+    let panel = LegacyOpenScanUi::with_backend(
         temp.path().join("scan"),
         temp.path().join("models"),
         Box::new(NoScanner),
     );
     let mut reopened = Harness::builder()
         .with_size(egui::vec2(1180., 840.))
-        .build_ui_state(|ui, p: &mut OpenScanUi| p.show(ui), panel);
+        .build_ui_state(|ui, p: &mut LegacyOpenScanUi| p.show(ui), panel);
     settle(&mut reopened);
     assert_eq!(reopened.state().profile.cleanup, saved);
     // A blocked settings destination reports failure and keeps the editor/draft.

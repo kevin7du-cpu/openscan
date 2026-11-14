@@ -12,3 +12,7 @@
 /native/win-x64/
 /resources/fonts/
 /resources/tessdata/*.traineddata
+
+# Rust source binaries are source code, not historical .NET build output.
+!crates/openscan-egui/src/bin/
+!crates/openscan-egui/src/bin/*.rs

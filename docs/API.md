@@ -1,3 +1,7 @@
+> OpenScan 0.3.0 uses the new accepted interface and `openscan-core` pipeline.
+> Start with [the 0.3 integration guide](OPENSCAN_0_3.md). The reference below
+> describes compatibility APIs; its former panel is now `LegacyOpenScanUi`.
+
 # Rust API
 
 The reusable libraries replace the old C# process interface. They do not require

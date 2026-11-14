@@ -1,6 +1,8 @@
 //! Embeddable OpenScan panel. Call `show(ui)` from any egui/eframe application.
 //! Original control arrangement: OpenScan contributors (MIT); native Rust port.
 #![forbid(unsafe_code)]
+pub mod current;
+pub use current::App as OpenScanUi;
 mod clean_copy;
 mod corrections;
 mod preview;
@@ -18,7 +20,7 @@ pub enum OpenScanEvent {
     Exported(PathBuf),
     ScanNote(ScanSession),
 }
-pub struct OpenScanUi {
+pub struct LegacyOpenScanUi {
     worker: Worker,
     pub profile: ScanProfile,
     session: Option<ScanSession>,
@@ -56,7 +58,7 @@ pub struct OpenScanUi {
     editor_existing: Option<String>,
     name_profile: Option<ScanProfile>,
 }
-impl OpenScanUi {
+impl LegacyOpenScanUi {
     pub fn new(storage: PathBuf, models: PathBuf) -> Self {
         Self::with_backend(storage, models, scan_module::native_backend())
     }

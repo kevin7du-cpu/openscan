@@ -63,7 +63,7 @@ impl Default for CleanupOptions {
         Self {
             deskew: true,
             auto_crop: true,
-            remove_background: false,
+            remove_background: true,
             denoise: true,
             sharpen: false,
             skip_blank_pages: false,
@@ -98,7 +98,7 @@ impl Default for ScanProfile {
             name: "Document".into(),
             device_id: None,
             source: ScanSource::Flatbed,
-            color: ScanColor::Color,
+            color: ScanColor::BlackWhite,
             paper: Paper::Letter,
             dpi: 300,
             max_pages: 100,

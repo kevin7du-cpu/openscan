@@ -1,0 +1,30 @@
+[package]
+name = "openscan-core"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+description = "Reusable OpenScan acquisition, document cleanup and searchable PDF pipeline"
+publish = false
+
+[features]
+default = []
+naps2 = []
+rust-ocr = ["scan-module/documents"]
+
+[dependencies]
+anyhow = "=1.0.104"
+dirs = "5"
+chrono = { version = "=0.4.45", default-features = false, features = ["std"] }
+fax = "0.2"
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "tiff", "bmp"] }
+imageproc = { version = "=0.25.1", default-features = false }
+lopdf = "=0.34.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+scan-module = { path = "../scan-module" }
+uuid = { version = "=1.29.1", features = ["v4"] }
+tempfile = "=3.27.0"
+
+[lints.rust]
+unsafe_code = "forbid"

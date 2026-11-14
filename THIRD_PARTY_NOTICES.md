@@ -32,3 +32,15 @@ particular, .NET, NAPS2, OpenCvSharp, OpenCV, PDFsharp, Tesseract and the old na
 runtime are no longer built or bundled by this source tree.
 
 The unmodified Ubuntu Light font is under the Ubuntu Font Licence in crates/scan-module/assets/Ubuntu-Font-Licence.txt. Keep it with the font. The egui-office-widgets crate is included locally (MIT OR Apache-2.0) for shared progress controls; it has no PaperDesk dependency. Lossless bilevel export uses the pinned open-source fax, jbig2enc-rust and hayro-jbig2 dependencies listed in the lockfile.
+
+## OpenScan 0.3 workflow source
+
+The new openscan-core pipeline and current.rs interface derive from the supplied
+Scan Module 0.1.3 Rust source, whose files carry SPDX-License-Identifier:
+MIT OR Apache-2.0. Its crop, shadow, deskew, despeckle and Otsu algorithms are
+retained. The synthetic skewed_page.png test fixture accompanies that source.
+Image processing uses image 0.25.10 and imageproc 0.25.1 (MIT); PDF composition
+uses lopdf 0.34.0 (MIT) and fax 0.2 (MIT). Tesseract is an optional separately
+installed Apache-2.0 program. NAPS2 is not bundled and its external adapter is
+disabled by default. No operating-system or proprietary icon/font assets were
+added; the dropdown chevron is drawn as vector geometry.
