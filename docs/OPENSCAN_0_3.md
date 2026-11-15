@@ -28,6 +28,14 @@ the current blocking backend operation returns. `cancel()` records the host's
 stop request; native driver calls may finish the current batch before returning.
 Do not forcibly terminate a worker that owns newly acquired pages.
 
+`open_scan_dialog()` opens the single scan dialog (formerly Layout 1) without
+starting acquisition or resetting pages/settings. Call it when the host's Scan
+Page command is clicked, including when the scanner already exists. The scanner
+toolbar has one Scan button that opens this dialog directly, with no dropdown.
+Manage Presets remains inside the scan dialog. Older Compact layout preferences still deserialize but do not
+select a different interface. `open_session(directory)` remains available for
+host import/resume actions.
+
 `settings()` / `settings_mut()` expose the new controls. `profile` remains the
 compatibility export profile. `with_backend` accepts an existing Rust scanner
 backend. For lower-level implementations use the GUI-independent
@@ -77,3 +85,9 @@ for workflow compatibility, but buffered-transfer semantics depend on the
 selected backend. Multiple simultaneous scanners should use distinct storage
 directories. Retention, encryption, multi-user authorization and cloud sync are
 host application responsibilities.
+
+## Approved lighter scanner text
+
+The scanner uses bundled Inter Regular (400), registered as a private font family.
+The host font families and zoom remain unchanged; scanner controls retain their
+110% sizing, the single Scan dialog and white selection fields.

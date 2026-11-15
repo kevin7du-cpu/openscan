@@ -8,13 +8,14 @@ required. The core does not depend on a GUI or on PaperDesk/PDFCraft.
 ## Accepted defaults and controls
 
 - Black & White, 300 DPI.
+- Lighter Inter Regular text, scoped to scanner controls and dialogs.
 - Deskew, despeckle and crop black borders: on.
 - Remove wrinkle and crease shadows: Low.
 - Controls: 110%. Standalone holding window: 65% of the monitor's width and
   height, never initially maximized. Embedded controls leave host zoom unchanged.
 - **Scan more Pages** immediately precedes **Done**. Additional batches append
   to the held document. A failed batch retains the previously completed pages.
-- Both scan dialog layouts, presets, scanner/source settings, image corrections,
+- One scan dialog, presets, scanner/source settings, image corrections,
   compression, OCR options, thumbnails, preview and activity log are retained.
 
 The new processing order is crop, shadow correction, deskew, descreen (optional),
@@ -81,7 +82,7 @@ Completed batches are committed to caller-owned session folders before delivery
 to the host. Exact imported source bytes and lossless corrected PNGs are kept
 separately. Reopening a v1 session never runs cleanup again. `openscan-v3.json`
 records the new output settings alongside the compatible `session.json`.
-**From Scanner → Open saved pages** opens an unfinished session. Explicit saved
+Hosts can resume an unfinished session with `open_session(directory)`. Explicit saved
 presets win over defaults; the old standalone presets are read only as a fallback
 and subsequent changes go to the host's own `presets-v3.json`.
 
