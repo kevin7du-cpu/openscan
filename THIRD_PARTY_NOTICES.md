@@ -44,3 +44,12 @@ uses lopdf 0.34.0 (MIT) and fax 0.2 (MIT). Tesseract is an optional separately
 installed Apache-2.0 program. NAPS2 is not bundled and its external adapter is
 disabled by default. No operating-system or proprietary icon/font assets were
 added; the dropdown chevron is drawn as vector geometry.
+
+## Scanner interface font
+
+The scanner embeds the unmodified Inter Regular font also used by PDFCraft.
+Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter).
+It is licensed under the SIL Open Font License 1.1; retain
+`crates/openscan-egui/assets/OFL-Inter.txt` when redistributing the scanner.
+The font is bundled for consistent rendering on Windows, Linux and macOS and
+does not require installation as a system font.

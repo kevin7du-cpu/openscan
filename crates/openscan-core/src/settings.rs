@@ -274,7 +274,8 @@ pub struct Preset {
 #[serde(default)]
 pub struct PresetStore {
     pub presets: Vec<Preset>,
-    /// The Scan dialog arrangement the user prefers.
+    /// Legacy dialog arrangement, retained for compatibility with existing preset files.
+    /// The current interface always shows the single scan dialog.
     pub layout: DialogLayout,
 }
 

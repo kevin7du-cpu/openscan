@@ -83,12 +83,12 @@ impl Review {
             });
             ui.separator();
             ui.add_enabled_ui(!busy, |ui| { ui.horizontal_wrapped(|ui| {
-                self.dirty |= ui.checkbox(&mut self.data.draft.options.remove_specks, "Remove isolated specks").changed();
-                self.dirty |= ui.checkbox(&mut self.data.draft.options.reduce_shadows, "Reduce wrinkle shadows").changed();
+                self.dirty |= crate::selection_controls::checkbox(ui, &mut self.data.draft.options.remove_specks, "Remove isolated specks").changed();
+                self.dirty |= crate::selection_controls::checkbox(ui, &mut self.data.draft.options.reduce_shadows, "Reduce wrinkle shadows").changed();
             }); });
             ui.small("Content-aware cleanup keeps unrecognized areas and uncertain marks. Dark creases may remain.");
             ui.add_enabled_ui(!busy, |ui| { ui.horizontal_wrapped(|ui| {
-                if ui.checkbox(&mut self.erase_mode,"Erase marks").changed() {
+                if crate::selection_controls::checkbox(ui, &mut self.erase_mode,"Erase marks").changed() {
                     self.show_original = false;
                     self.erase_start = None;
                 }
@@ -107,7 +107,7 @@ impl Review {
                     ui.add_enabled_ui(!busy,|ui| {
                         for (index,line) in self.data.draft.lines.iter_mut().enumerate() {
                             ui.push_id(index,|ui| {
-                                self.dirty |= ui.checkbox(&mut line.rebuild,format!("Replace region {}",index+1)).changed();
+                                self.dirty |= crate::selection_controls::checkbox(ui, &mut line.rebuild,format!("Replace region {}",index+1)).changed();
                                 self.dirty |= ui.add(egui::TextEdit::singleline(&mut line.line.text).desired_width(f32::INFINITY))
                                     .accessible_name(format!("OCR region {} text",index+1)).changed();
                                 if !line.rebuild {ui.small("Keep original appearance");}

@@ -6,6 +6,7 @@ pub use current::App as OpenScanUi;
 mod clean_copy;
 mod corrections;
 mod preview;
+mod selection_controls;
 mod worker;
 use egui::{Color32, RichText};
 use scan_module::{
@@ -406,7 +407,7 @@ impl LegacyOpenScanUi {
                 if previous!=self.profile.device_id {self.capabilities=None;self.capabilities_pending=true;}
                 if ui.button("Refresh scanners").clicked(){self.submit(Command::Devices,"Finding scanners");}
                 if let Some(caps)=&self.capabilities {ui.small(&caps.note);} else {ui.small("Choose a scanner, or import images to try corrections.");}
-                ui.add_enabled(self.native_dialog,egui::Checkbox::new(&mut self.profile.native_interface,"Use scanner's interface"));
+                crate::selection_controls::checkbox_enabled(ui, self.native_dialog, &mut self.profile.native_interface, "Use scanner's interface");
                 heading(ui,"Acquisition");
                 ui.add_enabled_ui(!self.profile.native_interface,|ui|{
                     let previous=self.profile.source;
@@ -419,7 +420,7 @@ impl LegacyOpenScanUi {
                     ui.horizontal(|ui|{ui.label("Resolution (DPI)");egui::ComboBox::from_id_salt("scan-dpi").selected_text(self.profile.dpi.to_string()).show_ui(ui,|ui|{for dpi in &resolutions{ui.selectable_value(&mut self.profile.dpi,*dpi,dpi.to_string());}}).response.accessible_name("Resolution DPI");});
                 });
                 ui.horizontal(|ui|{ui.label("Maximum pages");ui.add(egui::DragValue::new(&mut self.profile.max_pages).range(1..=250)).accessible_name("Maximum pages");});
-                ui.checkbox(&mut self.profile.flip_duplex_backs,"Rotate duplex backs 180°");
+                crate::selection_controls::checkbox(ui, &mut self.profile.flip_duplex_backs,"Rotate duplex backs 180°");
                 ui.add_space(12.0);
                 if self.editor_backup.is_some() {
                     // A named preset has its own corrections; editing it must not
@@ -429,7 +430,7 @@ impl LegacyOpenScanUi {
                     self.correction_editor=Some(self.profile.cleanup.clone());
                 }
                 heading(ui,"Output");
-                ui.checkbox(&mut self.profile.searchable_pdf,"Searchable PDF (local OCR)");
+                crate::selection_controls::checkbox(ui, &mut self.profile.searchable_pdf,"Searchable PDF (local OCR)");
                 ui.small("PDF: lossless compression. JPG: maximum quality, one file per page.");
                 ui.small("Imported images use the selected DPI when resolution metadata is unavailable. Review faint pages before excluding them.");
             });
@@ -747,7 +748,8 @@ impl LegacyOpenScanUi {
                     ui.text_edit_singleline(&mut self.preset_name)
                         .accessible_name("Preset name");
                     if !self.rename {
-                        ui.checkbox(
+                        crate::selection_controls::checkbox(
+                            ui,
                             &mut self.replace,
                             "Replace an existing preset with this name",
                         );
