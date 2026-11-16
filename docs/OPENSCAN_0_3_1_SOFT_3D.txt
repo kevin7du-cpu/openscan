@@ -1,0 +1,59 @@
+OpenScan 0.3.1 — Soft 3D Light
+
+This appearance update uses original MIT/Apache-2.0 Rust code with egui 0.37,
+eframe and wgpu. It does not replace the GUI framework or acquisition engine.
+
+Appearance
+- White surfaces; softly raised light buttons with subtle vertical shading.
+- White inset editors and dropdowns, thin blue-gray outlines and blue focus.
+- White unselected checkboxes/radios; blue selected checkboxes/radio points.
+- Soft dialog shadows and beveled separator lines.
+- Existing Inter Regular text, icons, positions, dimensions and callbacks retained.
+
+Behavior retained
+- 110% scanner controls; standalone holding window initially 65% of the monitor.
+- Black and white, 300 DPI; deskew, despeckle, crop and low crease/wrinkle cleanup.
+- Scan more Pages appends to the holding workspace; Done finishes the batch.
+- Worker-based scan acquisition, cleanup, optional OCR and searchable PDF export.
+
+Reuse
+Embed openscan_egui::OpenScanUi as before. The theme is local to the scanner:
+it does not reset an embedding application's global style, scale or font stack.
+The public openscan_egui::soft_3d module also exposes configure(), paint(), and
+popup_frame() for other egui 0.37 applications. Configure a local Style and wrap
+the matching controls in paint(). Popup contents need their own paint() scope.
+Six tiny gradient textures are cached per egui context. No animation or idle
+repaint timer is added. Native hit areas and accessibility semantics are retained.
+
+Version scope
+The reusable openscan-egui crate and standalone OpenScan app are 0.3.1.
+Internal processing/acquisition crate manifests retain their workspace version;
+the delivered scanner application and reusable GUI are version 0.3.1, revision r4.
+PDFCraft remains 0.21.1, with build label OpenScan-0.3.1-Soft3D-Light-r4.
+These are local community builds; older packages/releases remain available.
+
+Automatic discovery (r4)
+- Opening Scan requests a fresh background device search; repeated opens coalesce.
+- The first open searches automatically. A scanner connected after an empty search
+  replaces the file-import fallback; valid device choices and explicit image import
+  selections are retained when hardware was already available.
+- Held pages, scan options and presets survive rediscovery.
+- Hosts may call OpenScanUi::poll(ctx) from their logic loop to receive background
+  results while a holding window is hidden or collapsed. show(ui) also polls.
+- Discovery stops polling when idle; no permanent redraw timer is added.
+
+Platform testing
+Windows and Linux support their installed WIA / SANE scanner drivers.
+The macOS test build uses an external SANE scanimage installation and a compatible
+driver. It does not implement Apple ImageCaptureCore or direct TWAIN acquisition.
+Native macOS hardware validation is pending user testing.
+
+Rescan and review (r4)
+- Scan becomes Rescan after a batch. It replaces the most recent batch only after
+  successful acquisition and persistence, then removes the replaced session files.
+- Scan more Pages continues appending; original imported files are never removed.
+- Detailed preview adds zoom out/in, a percentage field/slider, 100% and Fit.
+- Done clears the holding workspace after successful save or host acknowledgement.
+  Hosts call complete_accept(&accepted_session) only after opening/filing succeeds.
+- The PaperDesk variant is OpenScan + Convert2txt. enable_convert2txt() requests
+  the host's existing conversion workflow. Public OpenScan/PDFCraft leave it disabled.

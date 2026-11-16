@@ -51,6 +51,52 @@ pub fn append(root: &Path, previous: Option<&ScanSession>, pages: &[Page]) -> Re
     Ok(session)
 }
 
+/// Replace only the last acquired batch, committing its replacement before removing old files.
+/// A failed acquisition or append leaves the previous manifest and files intact.
+pub fn replace_last_batch(
+    previous: &ScanSession,
+    old_ids: &[String],
+    pages: &[Page],
+) -> Result<(ScanSession, Vec<String>)> {
+    ensure!(!old_ids.is_empty(), "No scan batch to replace");
+    ensure!(
+        old_ids.len() <= previous.pages.len(),
+        "Scan batch no longer exists"
+    );
+    let start = previous.pages.len() - old_ids.len();
+    ensure!(
+        previous.pages[start..]
+            .iter()
+            .map(|p| &p.id)
+            .eq(old_ids.iter()),
+        "The latest scan batch changed"
+    );
+    // Resolve before committing so an invalid legacy path cannot trigger a partial replacement.
+    let old_paths = previous.pages[start..]
+        .iter()
+        .flat_map(|p| [&p.original_path, &p.image_path])
+        .map(|p| previous.resolve(p))
+        .collect::<std::result::Result<std::collections::BTreeSet<_>, _>>()?;
+    let mut prefix = previous.clone();
+    prefix.pages.truncate(start);
+    let session = append(&previous.directory, Some(&prefix), pages)?;
+    let retained_paths = session
+        .pages
+        .iter()
+        .flat_map(|p| [&p.original_path, &p.image_path])
+        .map(|p| session.resolve(p))
+        .collect::<std::result::Result<std::collections::BTreeSet<_>, _>>()?;
+    let mut warnings = Vec::new();
+    for path in old_paths.difference(&retained_paths) {
+        if let Err(error) = std::fs::remove_file(path) {
+            warnings.push(format!(
+                "Rescan saved, but an old scan file could not be removed: {error}"
+            ));
+        }
+    }
+    Ok((session, warnings))
+}
+
 /// Load previews from existing corrected images. Do not change the old manifest.
 pub fn pages(session: &ScanSession) -> Result<Vec<Page>> {
     session
@@ -220,6 +266,56 @@ mod tests {
                 .get(b"Filter")
                 .is_ok_and(|f| f.as_name().is_ok_and(|n| n == b"CCITTFaxDecode"))
         })));
+    }
+
+    #[test]
+    fn rescan_commit_removes_only_replaced_owned_files_and_preserves_failed_batches() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("user-original.png");
+        image::RgbImage::from_pixel(30, 40, image::Rgb([255; 3]))
+            .save(&input)
+            .unwrap();
+        let mut page = Page::from_image(image::open(&input).unwrap(), 300);
+        page.source = Some(input.clone());
+        let first = append(dir.path(), None, std::slice::from_ref(&page)).unwrap();
+        let held = append(dir.path(), Some(&first), &[page.clone(), page.clone()]).unwrap();
+        let ids = held.pages[1..]
+            .iter()
+            .map(|p| p.id.clone())
+            .collect::<Vec<_>>();
+        let files = held.pages[1..]
+            .iter()
+            .flat_map(|p| [&p.original_path, &p.image_path])
+            .map(|p| held.resolve(p).unwrap())
+            .collect::<Vec<_>>();
+        let manifest = std::fs::read(held.directory.join("session.json")).unwrap();
+        assert!(replace_last_batch(&held, &ids, &[]).is_err());
+        let mut missing = page.clone();
+        missing.source = Some(dir.path().join("missing.png"));
+        assert!(replace_last_batch(&held, &ids, &[missing]).is_err());
+        assert_eq!(
+            std::fs::read(held.directory.join("session.json")).unwrap(),
+            manifest
+        );
+        assert!(files.iter().all(|p| p.is_file()));
+        assert!(
+            replace_last_batch(
+                &held,
+                &[first.pages[0].id.clone()],
+                std::slice::from_ref(&page)
+            )
+            .is_err()
+        );
+        let (replacement, warnings) = replace_last_batch(&held, &ids, &[page]).unwrap();
+        assert!(warnings.is_empty());
+        assert_eq!(replacement.pages.len(), 2);
+        assert_eq!(replacement.pages[0], first.pages[0]);
+        assert!(files.iter().all(|p| !p.exists()));
+        assert!(input.is_file());
+        assert_eq!(
+            ScanSession::load(&held.directory).unwrap().pages,
+            replacement.pages
+        );
     }
 
     #[test]

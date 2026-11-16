@@ -41,6 +41,14 @@ impl Preview {
                     self.zoom = None;
                     self.reset_scroll = true;
                 }
+                if ui
+                    .button("100%")
+                    .accessible_name("Scan preview actual size")
+                    .clicked()
+                {
+                    self.zoom = Some(1.0);
+                    self.reset_scroll = true;
+                }
                 let mut percent = self.scale() * 100.0;
                 if ui
                     .add(

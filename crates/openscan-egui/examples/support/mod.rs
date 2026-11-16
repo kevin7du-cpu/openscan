@@ -24,12 +24,7 @@ impl Paths {
             .ok_or_else(|| "No user data directory found; supply --storage DIRECTORY".to_owned())?;
         let models = models
             .or_else(|| env_path("OPENSCAN_MODELS"))
-            .or_else(|| {
-                std::env::current_exe()
-                    .ok()
-                    .and_then(|p| p.parent().map(|p| p.join("models")))
-                    .filter(|p| p.join("text-recognition.rten").is_file())
-            })
+            .or_else(|| bundled_models())
             .unwrap_or_else(|| storage.join("models"));
         Ok(Some(Self { storage, models }))
     }
@@ -91,4 +86,13 @@ mod tests {
         }
         assert!(Paths::parse(["--help".into()]).unwrap().is_none());
     }
+}
+
+/// Find the models in a portable distribution or a standard macOS app bundle.
+pub fn bundled_models() -> Option<PathBuf> {
+    let executable = std::env::current_exe().ok()?;
+    let parent = executable.parent()?;
+    [parent.join("models"), parent.join("../Resources/models")]
+        .into_iter()
+        .find(|path| path.join("text-recognition.rten").is_file())
 }

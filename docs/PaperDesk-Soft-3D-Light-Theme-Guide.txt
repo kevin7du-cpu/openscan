@@ -1,0 +1,159 @@
+PAPERDESK SOFT 3D LIGHT
+Reusable desktop appearance guide - version 1.0, 2026-11-15
+
+HOW TO ASK FOR THIS LOOK
+
+"Apply the PaperDesk Soft 3D Light appearance from this guide. Use a white
+workspace, gently raised buttons, inset white text fields, thin beveled
+dividers, subtle blue-gray shadows, and blue selection and focus accents.
+Preserve this application's existing icons, control locations, wording,
+functionality, and accepted interface scale. Keep the result compact and
+readable. Implement the style through shared reusable components, then
+build it and inspect the real running application."
+
+Use this name together with this file in future requests. The name identifies
+this custom PaperDesk appearance; it is not a built-in Slint, Windows, Fluent,
+or egui theme that another application will automatically recognize.
+
+VISUAL CHARACTER
+
+A clean, white desktop interface with restrained depth. Controls have a
+slightly raised or inset surface, delicate highlights, fine outlines, and
+small soft shadows. Main content remains white and spacious; controls remain
+compact. Text is crisp and comfortably readable without becoming heavy.
+
+Use the same treatment throughout toolbars, dialogs, tabs, text fields,
+dropdowns, checkboxes, radio buttons, sliders, scrollbars, and separators.
+Selection, focus, hover, and pressed states must remain distinct.
+
+COLOR TOKENS
+
+Hex colors below describe the light appearance. Eight-digit values use
+#RRGGBBAA, where the final two digits are opacity.
+
+Workspace and panels:        #FFFFFF
+Preview surrounding surface: #FBFCFE
+Page surface:                #FFFFFF
+Main text:                   #172A41
+Scanner text:                #181C22
+Secondary text:              #43556E
+Disabled text:               #7B8DA3
+Control outline:             #B9C6D5
+Selected control outline:    #A9C9E8
+Focus outline:               #1675C8
+Raised-surface shadow:       #253C581F (about 12% opacity)
+Inset shadow:                #18344F18 (about 9% opacity)
+Fine highlight:              #FFFFFFED (about 93% opacity)
+
+BUTTON SURFACES
+
+All gradients run from top to bottom:
+
+Normal:   #FFFFFF at 0%, #F8FAFC at 48%, #EAF0F6 at 100%.
+Hover:    #FFFFFF at 0%, #EEF7FF at 40%, #D9EAF9 at 100%.
+Selected: #EFF7FF at 0%, #D7EAFF at 100%.
+Pressed:  #D8E7F5 at 0%, #EDF5FC at 100%.
+Primary:  #2786DD at 0%, #0067C0 at 100%, with white text.
+Disabled: #F1F4F7, with subdued text and no raised shadow.
+
+Use approximately 5 logical pixels of corner radius, a 1-pixel outline,
+and a 2-pixel shadow blur with a 1-pixel downward offset. Add a fine highlight
+near the upper edge. A pressed button uses a slight inset shadow instead.
+Keyboard focus has a visible 2-pixel blue outline. Selected tabs can use
+the pale-blue surface; inactive flat tabs remain unobtrusive.
+
+TEXT FIELDS AND DROPDOWNS
+
+Keep the interior white and text dark. Use a 1-pixel blue-gray outline,
+approximately 4-5 pixels of corner radius, and a subtle inset edge with
+roughly 3 pixels of blur and a 1-pixel downward offset. Focus uses the
+blue outline. Dropdowns retain a clear arrow and align with related fields.
+
+Render highlights and shadows around the edges or behind the editor.
+Do not paint a translucent highlight across the text, placeholder, selection,
+caret, or dropdown arrow. Preserve native editing, selection, clipboard,
+keyboard navigation, disabled states, and accessibility behavior.
+
+CHECKBOXES AND RADIO BUTTONS
+
+Unchecked controls have white interiors, fine gray outlines, and a slight
+inset edge. Checked controls use the blue primary gradient with a white
+checkmark or white center dot. The reference indicator is 18 by 18 logical
+pixels. A checkbox has softly rounded corners; a radio button is circular.
+Make the accompanying label clickable and keep keyboard focus visible.
+
+SLIDERS, SCROLLBARS, AND LINES
+
+Retain the application's existing slider thumb and arrow shapes. Add only
+subtle surface highlights and edge depth. Scrollbars should be visible and
+easy to locate, with light tracks and a blue-gray raised thumb. PaperDesk's
+workspace and folder scrollbars are separate and approximately 6 pixels wide;
+their pointer hit areas may be larger than the visible bar.
+
+Use a restrained two-tone bevel for separators: a blue-gray edge beside
+a light highlight, about 2 pixels total. Preserve resize behavior and
+adequate draggable hit areas. Do not turn dividers into large dark bands.
+
+PANELS AND DIALOGS
+
+Keep navigation, file lists, document surfaces, and metadata panels white.
+Use thin separators to establish structure. Selected rows use the pale-blue
+gradient. Dialogs may use a 6-8 pixel radius and a soft shadow, approximately
+16-20 pixels of blur with a 5-6 pixel downward offset. Content and all primary
+actions should fit at the normal window size; use scrolling when necessary.
+
+SIZES AND TYPOGRAPHY
+
+Measurements are logical pixels at 100% interface scale, not physical screen
+pixels. Respect operating-system DPI and the application's chosen scale.
+
+Reference defaults:
+- Body and control text: 14 pixels, with a light-to-regular visual weight.
+- PaperDesk library font: the existing licensed Ubuntu Light face.
+- Scanner font: the existing licensed Inter Medium face at 15.4 pixels,
+  preserving the accepted 110% scanner text scale.
+- Small secondary labels: approximately 11 pixels.
+- Application title: approximately 21 pixels.
+- Normal controls: approximately 28 pixels high, with compact 6-8 pixel gaps.
+- Dialog action buttons: approximately 30-34 pixels high.
+- Text button horizontal padding: approximately 9 pixels per side.
+
+For another application, preserve its approved font unless a font change is
+requested. Use its licensed regular or medium face to achieve comparable
+readability. Do not make every label semibold or bold. Do not shrink readable
+text just to force a layout to fit; adjust spacing, wrapping, or scrolling.
+
+ICONS AND LAYOUT
+
+Leave existing icon files, colors, shapes, sizes, and meanings unchanged.
+This theme does not require replacing icons. PaperDesk uses its existing
+Fluent assets and original vector symbols; the theme adds depth around them.
+
+Preserve the target application's layout and behavior. Applying this look
+does not mean replacing every application's layout with PaperDesk's panels.
+Keep natural button widths and aligned form columns. Prevent single-line
+fields from stretching into large empty boxes. Wrap long paths and labels.
+
+For document applications, show the top of a newly selected page, preserve
+its aspect ratio, provide scroll extents for the whole page, and support
+zoom without clipping content. Keep preview and metadata actions accessible.
+
+IMPLEMENTATION AND CHECKING
+
+Put colors, gradients, borders, radii, and shadows in shared theme tokens.
+Apply them through reusable controls rather than styling every screen
+independently. Keep application logic separate from appearance code.
+
+The Slint reference implementation is in PaperDesk Slint's ui/surfaces.slint,
+ui/widgets.slint, ui/scan-controls.slint, and ui/scanner.slint, with layout in
+ui/app.slint. It layers custom styling over the supplied modern-theme.slint;
+copying modern-theme.slint alone will not reproduce this appearance.
+
+The visual rules can be implemented in Slint or another UI toolkit. Exact
+font metrics and shadow rendering vary, so inspect the running application
+at its normal size, smaller sizes, and supported scaling. Check text contrast,
+overflow, scrolling, dropdowns, focus, editing, hover, pressed states, and
+disabled states. Preserve the relevant licenses when reusing code or assets.
+
+This guide describes the approved light appearance. A dark variant should
+be designed and checked separately rather than produced by color inversion.

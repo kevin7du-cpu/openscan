@@ -1,0 +1,22 @@
+OpenScan 0.3.1 Soft 3D Light — revision r4 validation
+
+This revision adds automatic discovery, Rescan of the latest batch, detailed
+zoom/Fit/100% review, and a reusable completion acknowledgement. PaperDesk enables
+Convert2txt; public OpenScan and PDFCraft do not enable this optional host action.
+
+Automated checks cover:
+- Rediscovery on reopen and hotplug, preserving held pages and selected settings.
+- Replacing only the latest batch, keeping earlier pages and imported source files.
+- Failed rescan persistence keeps the old manifest and old scan files; successful
+  replacement removes the replaced originals/processed copies owned by the session.
+- Host acknowledgement clears exactly the accepted session, rejecting stale output.
+- Zoom changes displayed size without modifying working/exported pixels; the review
+  texture uses source resolution when within the renderer's texture limit.
+- PDFCraft opens a new unsaved PDF, preserves other tabs, clears the scanner, and
+  reopens Scan with no old pages. No Scan Note/Convert2txt control is enabled there.
+- PaperDesk exposes Convert2txt and clears held pages only after successful filing.
+
+Scanner/UI tests, scoped Clippy, formatting, PDFCraft asset/layer checks and its wasm
+check are run locally. Exact package/platform outcomes are delivered with each build.
+Native macOS execution and physical scanning acceptance require testing on that OS.
+Cross-compilation and archive integrity checks do not establish hardware compatibility.

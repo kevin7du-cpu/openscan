@@ -46,12 +46,17 @@ impl LegacyOpenScanUi {
 pub(super) fn controls(ui: &mut egui::Ui, options: &mut CleanupOptions) {
     ui.label("Black & White scans use Balanced cleanup.")
         .on_hover_text("Reduces paper texture and show-through before removing speckles. Use Grayscale or Color to retain subtle shading.");
-    ui.checkbox(&mut options.deskew, "Straighten pages (deskew)");
-    ui.checkbox(&mut options.auto_crop, "Crop to content");
-    ui.checkbox(&mut options.remove_background, "Whiten uneven background");
-    ui.checkbox(&mut options.denoise, "Remove dust / speckles");
-    ui.checkbox(&mut options.sharpen, "Sharpen text");
-    ui.checkbox(
+    crate::selection_controls::checkbox(ui, &mut options.deskew, "Straighten pages (deskew)");
+    crate::selection_controls::checkbox(ui, &mut options.auto_crop, "Crop to content");
+    crate::selection_controls::checkbox(
+        ui,
+        &mut options.remove_background,
+        "Whiten uneven background",
+    );
+    crate::selection_controls::checkbox(ui, &mut options.denoise, "Remove dust / speckles");
+    crate::selection_controls::checkbox(ui, &mut options.sharpen, "Sharpen text");
+    crate::selection_controls::checkbox(
+        ui,
         &mut options.skip_blank_pages,
         "Exclude blank pages (reversible)",
     );

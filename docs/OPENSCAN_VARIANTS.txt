@@ -1,0 +1,16 @@
+OpenScan variants — Soft 3D Light, revision r4
+
+OpenScan: public reusable scanner and PDFCraft scanner. No Scan Note or Convert2txt
+button is enabled. Import/acquisition, corrections, review, OCR and PDF export remain.
+
+OpenScan + Convert2txt: PaperDesk configures the same reusable scanner using
+enable_convert2txt(). Its Convert2txt button requests the host's existing local OCR
+and editable plain-text workflow. PaperDesk-specific filing/note logic remains private.
+The compatibility enable_scan_notes()/ScanNote API names remain for existing hosts.
+
+Both variants: opening Scan discovers devices; Rescan replaces the latest batch only
+after successful acquisition and persistence, then removes the replaced session files.
+Scan more Pages appends. Zoom/Fit/100% review uses the working scan image prepared on
+a background worker. Done clears the held pages after the host successfully opens or
+files the accepted document; durable recovery files remain. A failed handoff retains
+the held pages. Saved documents and imported source images are never deleted by Rescan.

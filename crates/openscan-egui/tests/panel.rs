@@ -2,7 +2,7 @@ use egui_kittest::{
     Harness,
     kittest::{NodeT, Queryable},
 };
-use openscan_egui::{OpenScanEvent, OpenScanUi};
+use openscan_egui::{LegacyOpenScanUi as OpenScanUi, OpenScanEvent};
 use scan_module::*;
 use std::time::{Duration, Instant};
 struct FixtureScanner;

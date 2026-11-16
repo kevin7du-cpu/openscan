@@ -17,8 +17,8 @@ use openscan_core::cleanup::Page;
 use openscan_core::ocr::{self, OcrEngine};
 use openscan_core::pipeline::{self, Target};
 use openscan_core::settings::{
-    ColorMode, DialogLayout, Level, OptimizeOptions, OutputMode, PaperSize, Preset, PresetStore,
-    RESOLUTIONS, ScanSettings, Sides, Source, TransferMechanism,
+    ColorMode, Level, OutputMode, PaperSize, Preset, PresetStore, RESOLUTIONS, ScanSettings, Sides,
+    Source, TransferMechanism,
 };
 
 use crate::OpenScanEvent;
@@ -28,7 +28,7 @@ enum Event {
     Log(String),
     Saved(Vec<PathBuf>),
     Failed(String),
-    Retained(Vec<Page>, ScanSession, bool),
+    Retained(Vec<Page>, ScanSession, usize, bool),
     Accepted(ScanSession),
     Initialized(
         Vec<Device>,
@@ -42,34 +42,67 @@ fn send(sender: &Sender<Event>, event: Event) {
     let _ = sender.send(event);
 }
 
+const SCANNER_FONT: &str = "OpenScan/Inter-Regular";
+
+/// Add a private family without replacing the host's fonts or fallback chains.
+fn scanner_font(ctx: &Context) -> egui::FontFamily {
+    let family = egui::FontFamily::Name(SCANNER_FONT.into());
+    let definitions = ctx.fonts(|fonts| {
+        let definitions = fonts.definitions();
+        (!definitions.families.contains_key(&family)).then(|| definitions.clone())
+    });
+    if let Some(mut definitions) = definitions {
+        let mut stack = vec![SCANNER_FONT.to_owned()];
+        if let Some(fallbacks) = definitions.families.get(&egui::FontFamily::Proportional) {
+            stack.extend(fallbacks.iter().cloned());
+        }
+        definitions.font_data.insert(
+            SCANNER_FONT.to_owned(),
+            Arc::new(egui::FontData::from_static(include_bytes!(
+                "../assets/Inter-Regular.ttf"
+            ))),
+        );
+        definitions.families.insert(family.clone(), stack);
+        ctx.set_fonts(definitions);
+        ctx.request_repaint();
+    }
+    // A host may already have laid out text this pass. egui then installs the
+    // new family at the next pass; keep the first pass safe in embedded panels.
+    if ctx.fonts(|fonts| fonts.definitions().families.contains_key(&family)) {
+        family
+    } else {
+        egui::FontFamily::Proportional
+    }
+}
+
 /// A local control style: embedded scanners never change their host's zoom or theme.
 fn configure_controls(ui: &mut Ui) {
+    let family = scanner_font(ui.ctx());
     let mut style = egui::Style {
         visuals: egui::Visuals::light(),
         ..Default::default()
     };
+    let ink = egui::Color32::from_rgb(24, 28, 34);
+    style.visuals.override_text_color = Some(ink);
+    style.visuals.weak_text_color = Some(egui::Color32::from_rgb(65, 72, 82));
+    for widget in [
+        &mut style.visuals.widgets.noninteractive,
+        &mut style.visuals.widgets.inactive,
+        &mut style.visuals.widgets.hovered,
+        &mut style.visuals.widgets.active,
+        &mut style.visuals.widgets.open,
+    ] {
+        widget.fg_stroke.color = ink;
+    }
     for font in style.text_styles.values_mut() {
+        font.family = family.clone();
         font.size *= 1.1;
     }
     style.spacing.interact_size *= 1.1;
     style.spacing.button_padding *= 1.1;
     style.spacing.item_spacing *= 1.1;
+    crate::soft_3d::configure(&mut style);
     ui.set_style(style);
-}
-
-// Draw the existing dropdown chevron as geometry, independent of installed fonts.
-fn scanner_menu(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
-    let response = ui.menu_button("From Scanner     ", contents).response;
-    let center = egui::pos2(response.rect.right() - 10.0, response.rect.center().y);
-    ui.painter().add(egui::Shape::convex_polygon(
-        vec![
-            center + egui::vec2(-4.0, -2.0),
-            center + egui::vec2(4.0, -2.0),
-            center + egui::vec2(0.0, 3.0),
-        ],
-        ui.visuals().text_color(),
-        egui::Stroke::NONE,
-    ));
 }
 
 const DIALOG_WIDTH: f32 = 500.0;
@@ -77,15 +110,6 @@ const LABEL_WIDTH: f32 = 96.0;
 const COMBO_WIDTH: f32 = 210.0;
 const SIDE_BUTTON_WIDTH: f32 = 128.0;
 const ROW_HEIGHT: f32 = 22.0;
-/// Width of the second Scan dialog layout.
-const COMPACT_WIDTH: f32 = 470.0;
-/// How far settings that belong to the line above are pushed in.
-const INDENT: f32 = 22.0;
-/// Label width in the filter list, wide enough for the longest filter name.
-const FILTER_LABEL_WIDTH: f32 = 140.0;
-/// Choices for "Reduce resolution to"; 0 leaves the resolution alone.
-const DOWNSAMPLE_CHOICES: &[u32] = &[0, 100, 150, 200, 300];
-
 /// Scale text, buttons and their hit areas together, independently of scan DPI.
 #[cfg(test)]
 fn configure_interface(ctx: &Context) {
@@ -102,25 +126,24 @@ fn show_modal<R>(
     let available =
         (ctx.content_rect().size() - egui::vec2(32.0, 32.0)).max(egui::vec2(80.0, 80.0));
     Modal::new(id)
-        .frame(egui::Frame::popup(&egui::Style {
-            visuals: egui::Visuals::light(),
-            ..Default::default()
-        }))
+        .frame(crate::soft_3d::popup_frame())
         .show(ctx, |ui| {
             configure_controls(ui);
-            // An Area remembers its previous size. Give the scroll viewport the
-            // current display budget so it can grow after the initial sizing pass.
-            ui.set_max_size(available);
-            ScrollArea::both()
-                .id_salt(id.with("dialog-scroll"))
-                .max_width(available.x)
-                .max_height(available.y)
-                .show(ui, |ui| {
-                    // Horizontal scrolling otherwise gives children unlimited width.
-                    ui.set_width(DIALOG_WIDTH);
-                    contents(ui)
-                })
-                .inner
+            crate::soft_3d::paint(ui, |ui| {
+                // An Area remembers its previous size. Give the scroll viewport the
+                // current display budget so it can grow after the initial sizing pass.
+                ui.set_max_size(available);
+                ScrollArea::both()
+                    .id_salt(id.with("dialog-scroll"))
+                    .max_width(available.x)
+                    .max_height(available.y)
+                    .show(ui, |ui| {
+                        // Horizontal scrolling otherwise gives children unlimited width.
+                        ui.set_width(DIALOG_WIDTH);
+                        contents(ui)
+                    })
+                    .inner
+            })
         })
 }
 
@@ -149,11 +172,6 @@ struct OptionWindows {
     multiple_files: bool,
     /// Holds the name being typed for "Save as Preset".
     save_preset: Option<String>,
-    /// Layout 2: the copy of the optimize settings being edited until OK or Cancel.
-    optimize: Option<OptimizeOptions>,
-    /// Layout 2: scanner settings that do not fit in the dialog itself.
-    scanner_details: bool,
-    help: bool,
 }
 
 /// Tabs of the options window.
@@ -180,11 +198,15 @@ struct FormRequests {
     ocr_options: bool,
     multiple_files_options: bool,
     browse_append: bool,
-    scanner_details: bool,
-    optimize_filters: bool,
 }
 
 /// The accepted OpenScan interface, reusable inside any egui host.
+#[derive(Clone)]
+struct ScanBatch {
+    start: usize,
+    ids: Vec<String>,
+}
+
 pub struct App {
     storage: PathBuf,
     models: PathBuf,
@@ -193,6 +215,7 @@ pub struct App {
     host_accept: bool,
     scan_notes: bool,
     initialized: bool,
+    discovery_pending: bool,
     standalone: bool,
     injected: Option<Arc<backend::native::NativeBackend>>,
     cancel_token: CancellationToken,
@@ -216,6 +239,8 @@ pub struct App {
     pages: Vec<Page>,
     previews: Vec<TextureHandle>,
     selected_page: usize,
+    last_batch: Option<ScanBatch>,
+    review: crate::review_canvas::ReviewCanvas,
 
     events_tx: Sender<Event>,
     events_rx: Receiver<Event>,
@@ -245,6 +270,7 @@ impl App {
             host_accept: true,
             scan_notes: false,
             initialized: false,
+            discovery_pending: false,
             standalone: false,
             injected: None,
             cancel_token: CancellationToken::default(),
@@ -265,6 +291,8 @@ impl App {
             pages: Vec::new(),
             previews: Vec::new(),
             selected_page: 0,
+            last_batch: None,
+            review: Default::default(),
             events_tx,
             events_rx,
             busy: Some("Opening scanner"),
@@ -293,20 +321,6 @@ impl App {
                 app.scan_open = true;
                 app.options.tabs = Some(OptionsTab::Ocr);
             }
-            Ok("scan2") => {
-                app.presets.layout = DialogLayout::Compact;
-                app.scan_open = true;
-            }
-            Ok("optimize2") => {
-                app.presets.layout = DialogLayout::Compact;
-                app.scan_open = true;
-                app.options.optimize = Some(app.settings.optimize_opts.clone());
-            }
-            Ok("scanner2") => {
-                app.presets.layout = DialogLayout::Compact;
-                app.scan_open = true;
-                app.options.scanner_details = true;
-            }
             _ => {}
         }
         app
@@ -334,8 +348,13 @@ impl App {
     pub fn enable_filing_formats(&mut self) {
         self.host_accept = true;
     }
-    pub fn enable_scan_notes(&mut self) {
+    /// Enable the optional host-provided Convert2txt action (PaperDesk variant).
+    pub fn enable_convert2txt(&mut self) {
         self.scan_notes = true;
+    }
+    /// Compatibility alias for existing hosts.
+    pub fn enable_scan_notes(&mut self) {
+        self.enable_convert2txt();
     }
     pub fn filing_format(&self) -> Option<scan_module::ScanFileFormat> {
         Some(scan_module::ScanFileFormat::Pdf)
@@ -347,7 +366,7 @@ impl App {
         self.session.as_ref()
     }
     pub fn is_busy(&self) -> bool {
-        self.busy.is_some()
+        self.busy.is_some() || self.discovery_pending
     }
     pub fn error(&self) -> Option<&str> {
         self.error.as_deref()
@@ -355,6 +374,48 @@ impl App {
     pub fn cancel(&self) {
         self.cancel_token.cancel();
     }
+    /// Open the scan dialog without starting acquisition or resetting held pages/settings.
+    /// Hosts call this when their Scan Page command is clicked, including after Cancel.
+    pub fn open_scan_dialog(&mut self) {
+        if !self.is_busy() {
+            self.scan_open = true;
+            // A scanner may have been connected or woken since the last dialog.
+            // Coalesce repeated opens and keep discovery off the UI thread.
+            self.discovery_pending = true;
+        }
+    }
+
+    /// Clear the holding workspace only after a host has successfully opened/saved
+    /// this exact accepted session. Recovery files and the host document are retained.
+    pub fn complete_accept(&mut self, accepted: &ScanSession) -> bool {
+        if self.busy.is_some_and(|job| job != "Finding scanners")
+            || !self.session.as_ref().is_some_and(|current| {
+                current.directory == accepted.directory && current.pages == accepted.pages
+            })
+        {
+            return false;
+        }
+        self.session = None;
+        self.pages.clear();
+        self.previews.clear();
+        self.selected_page = 0;
+        self.last_batch = None;
+        self.review = Default::default();
+        self.ask_more_pages = false;
+        self.scan_open = false;
+        self.error = None;
+        self.status = "Ready for a new scan".into();
+        true
+    }
+
+    fn scan_label(&self) -> &'static str {
+        if self.last_batch.is_some() {
+            "Rescan"
+        } else {
+            "Scan"
+        }
+    }
+
     pub fn settings(&self) -> &ScanSettings {
         &self.settings
     }
@@ -388,13 +449,14 @@ impl App {
             send(
                 &events,
                 match result {
-                    Ok((pages, session)) => Event::Retained(pages, session, false),
+                    Ok((pages, session)) => Event::Retained(pages, session, 0, false),
                     Err(e) => Event::Failed(format!("{e:#}")),
                 },
             );
         });
     }
     fn refresh(&mut self, ctx: &Context, load_presets: bool) {
+        self.discovery_pending = false;
         self.busy = Some("Finding scanners");
         let events = self.events_tx.clone();
         let ctx = ctx.clone();
@@ -536,7 +598,18 @@ impl App {
 
         self.error = None;
         self.cancel_token = CancellationToken::default();
-        let previous = if keep_pages {
+        let cancellation = self.cancel_token.clone();
+        let replacement = if keep_pages {
+            None
+        } else {
+            self.last_batch.clone()
+        };
+        let keep_count = if keep_pages {
+            self.pages.len()
+        } else {
+            replacement.as_ref().map_or(0, |b| b.start)
+        };
+        let previous = if keep_pages || replacement.is_some() {
             self.session.clone()
         } else {
             None
@@ -565,13 +638,28 @@ impl App {
                         } else {
                             pipeline::scan_and_clean(&device, &settings, &input_files, &log)?
                         };
-                    let session =
-                        openscan_core::session::append(&storage, previous.as_ref(), &pages)?;
-                    openscan_core::session::write_settings(&session, &settings)?;
+                    cancellation.check()?;
+                    let session = if let (Some(previous), Some(batch)) =
+                        (previous.as_ref(), replacement.as_ref())
+                    {
+                        openscan_core::session::write_settings(previous, &settings)?;
+                        let (session, warnings) = openscan_core::session::replace_last_batch(
+                            previous, &batch.ids, &pages,
+                        )?;
+                        for warning in warnings {
+                            log(warning);
+                        }
+                        session
+                    } else {
+                        let session =
+                            openscan_core::session::append(&storage, previous.as_ref(), &pages)?;
+                        openscan_core::session::write_settings(&session, &settings)?;
+                        session
+                    };
                     Ok((pages, session))
                 }));
             let event = match result {
-                Ok(Ok((pages, session))) => Event::Retained(pages, session, keep_pages),
+                Ok(Ok((pages, session))) => Event::Retained(pages, session, keep_count, true),
                 Ok(Err(error)) => Event::Failed(format!("{error:#}")),
                 Err(_) => Event::Failed(
                     "Scanner processing stopped unexpectedly; saved pages are retained.".into(),
@@ -688,24 +776,50 @@ impl App {
             match event {
                 Event::Log(message) => self.log.push(message),
                 Event::Initialized(devices, problems, presets, engine, languages) => {
+                    // When startup found only file import, prefer a scanner that has
+                    // since connected. Keep an explicitly chosen import source when
+                    // hardware was already available, and retain valid scanner choices.
+                    let import_fallback = !self
+                        .devices
+                        .iter()
+                        .any(|d| d.backend != FILE_IMPORT_BACKEND)
+                        && self
+                            .device_for(&self.settings)
+                            .is_some_and(|d| d.backend == FILE_IMPORT_BACKEND);
                     self.devices = devices;
                     self.log.extend(problems);
                     self.presets = presets;
                     self.ocr_engine = engine;
                     self.ocr_languages = languages;
-                    if self.device_for(&self.settings).is_none()
-                        && let Some(device) = self.devices.first()
+                    if (self.device_for(&self.settings).is_none() || import_fallback)
+                        && let Some(device) = self
+                            .devices
+                            .iter()
+                            .find(|d| d.backend != FILE_IMPORT_BACKEND)
+                            .or_else(|| self.devices.first())
                     {
                         self.settings.device = device.key();
                     }
                     self.busy = None;
                 }
-                Event::Retained(pages, session, keep) => {
-                    if !keep {
-                        self.pages.clear();
-                        self.previews.clear();
-                        self.selected_page = 0;
-                    }
+                Event::Retained(pages, session, keep, new_batch) => {
+                    self.pages.truncate(keep);
+                    self.previews.truncate(keep);
+                    self.selected_page = keep;
+                    self.last_batch = if new_batch {
+                        Some(ScanBatch {
+                            start: keep,
+                            ids: session
+                                .pages
+                                .iter()
+                                .skip(session.pages.len().saturating_sub(pages.len()))
+                                .map(|p| p.id.clone())
+                                .collect(),
+                        })
+                    } else {
+                        None
+                    };
+                    self.review = Default::default();
                     self.session = Some(session);
                     self.receive_pages(ctx, pages);
                 }
@@ -721,6 +835,9 @@ impl App {
                         .collect();
                     self.host_events
                         .extend(files.into_iter().map(OpenScanEvent::Exported));
+                    if let Some(accepted) = self.session.clone() {
+                        self.complete_accept(&accepted);
+                    }
                     self.status = format!("Saved {}", names.join(", "));
                     self.log.push(self.status.clone());
                 }
@@ -754,51 +871,9 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 let idle = self.busy.is_none();
                 ui.add_enabled_ui(idle, |ui| {
-                    scanner_menu(ui, |ui| {
-                        if ui.button("Scan...").clicked() {
-                            self.scan_open = true;
-                            ui.close();
-                        }
-                        if !self.presets.presets.is_empty() {
-                            ui.separator();
-                        }
-                        let mut chosen = None;
-                        for (index, preset) in self.presets.presets.iter().enumerate() {
-                            if ui.button(&preset.name).clicked() {
-                                chosen = Some(index);
-                                ui.close();
-                            }
-                        }
-                        if let Some(index) = chosen {
-                            self.settings = self.presets.presets[index].settings.clone();
-                            self.start_scan(ctx, false);
-                        }
-                        ui.separator();
-                        if ui.button("Open saved pages...").clicked() {
-                            if let Some(directory) = rfd::FileDialog::new().set_title("Choose an OpenScan session folder").set_directory(self.storage.join("Sessions")).pick_folder() {
-                                self.open_session(directory);
-                            }
-                            ui.close();
-                        }
-                        if ui.button("Manage Presets...").clicked() {
-                            self.presets_open = true;
-                            ui.close();
-                        }
-                        ui.separator();
-                        let before = self.presets.layout;
-                        for &layout in DialogLayout::ALL {
-                            let text = format!("Scan dialog: {}", layout.label());
-                            if ui
-                                .radio_value(&mut self.presets.layout, layout, text)
-                                .clicked()
-                            {
-                                ui.close();
-                            }
-                        }
-                        if self.presets.layout != before {
-                            self.save_presets();
-                        }
-                    });
+                    if ui.button(self.scan_label()).on_hover_text("Open scan settings; Rescan replaces only the most recent batch after a successful scan").clicked() {
+                        self.open_scan_dialog();
+                    }
                     if ui
                         .add_enabled(
                             !self.pages.is_empty() && self.device_for(&self.settings).is_some(),
@@ -816,7 +891,7 @@ impl App {
                     {
                         self.start_save(ctx);
                     }
-                    if self.scan_notes && ui.add_enabled(!self.pages.is_empty(), Button::new("Scan Note")).clicked()
+                    if self.scan_notes && ui.add_enabled(!self.pages.is_empty(), Button::new("Convert2txt")).clicked()
                         && let Some(session) = &self.session { self.host_events.push(OpenScanEvent::ScanNote(session.clone())); }
                     if ui.button("Refresh Scanners").clicked() {
                         self.refresh(ctx, false);
@@ -855,7 +930,16 @@ impl App {
                                 egui::Image::new(texture).max_size(egui::vec2(120.0, 160.0));
                             let button =
                                 egui::Button::image(image).selected(index == self.selected_page);
-                            if ui.add(button).clicked() {
+                            let response = ui.add(button);
+                            response.widget_info(|| {
+                                egui::WidgetInfo::selected(
+                                    egui::Role::Button,
+                                    ui.is_enabled(),
+                                    index == self.selected_page,
+                                    format!("Select page {}", index + 1),
+                                )
+                            });
+                            if response.clicked() {
                                 self.selected_page = index;
                             }
                             ui.label(format!("Page {}", index + 1));
@@ -864,18 +948,20 @@ impl App {
                     });
             });
 
-        egui::CentralPanel::default().show(ui, |ui| match self.previews.get(self.selected_page) {
-            Some(texture) => {
-                ScrollArea::both()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.add(egui::Image::new(texture).max_size(ui.available_size()));
+        egui::CentralPanel::default().show(ui, |ui| {
+            match self
+                .previews
+                .get(self.selected_page)
+                .zip(self.pages.get(self.selected_page))
+            {
+                Some((texture, page)) => {
+                    self.review.show(ui, page, texture);
+                }
+                None => {
+                    ui.centered_and_justified(|ui| {
+                        ui.label("No pages yet. Click Scan to open the scan dialog.");
                     });
-            }
-            None => {
-                ui.centered_and_justified(|ui| {
-                    ui.label("No pages yet. Choose From Scanner, then Scan.");
-                });
+                }
             }
         });
     }
@@ -884,16 +970,19 @@ impl App {
         if !self.scan_open || self.preset_editor.is_some() {
             return;
         }
-        if self.presets.layout == DialogLayout::Compact {
-            self.compact_scan_dialog(ctx);
-            return;
-        }
         let mut requests = FormRequests::default();
         let mut close = false;
         let mut scan = false;
         show_modal(ctx, Id::unique("scan_dialog"), |ui| {
             ui.set_width(DIALOG_WIDTH);
-            close |= title_bar(ui, "Scan");
+            close |= title_bar(
+                ui,
+                if self.scan_notes {
+                    "OpenScan + Convert2txt"
+                } else {
+                    "Scan"
+                },
+            );
             scroll_scan_form(ui, |ui| {
                 settings_form(
                     ui,
@@ -914,7 +1003,12 @@ impl App {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let size = egui::vec2(100.0, 0.0);
                     close |= ui.add(Button::new("Cancel").min_size(size)).clicked();
-                    scan = ui.add(Button::new("Scan").min_size(size)).clicked();
+                    scan = ui
+                        .add(Button::new(self.scan_label()).min_size(size))
+                        .on_hover_text(
+                            "Rescan replaces the most recent batch; Scan more Pages appends",
+                        )
+                        .clicked();
                     if ui
                         .add(Button::new("Save as Preset").min_size(size))
                         .clicked()
@@ -935,62 +1029,12 @@ impl App {
         }
     }
 
-    /// The second Scan dialog layout: Input, Output and Document Settings.
-    fn compact_scan_dialog(&mut self, ctx: &Context) {
-        let mut requests = FormRequests::default();
-        let mut close = false;
-        let mut scan = false;
-        let mut defaults = false;
-        show_modal(ctx, Id::unique("scan_dialog_compact"), |ui| {
-            ui.set_width(COMPACT_WIDTH);
-            close |= title_bar(ui, "Scan");
-            scroll_scan_form(ui, |ui| {
-                compact_form(
-                    ui,
-                    &mut self.settings,
-                    &self.devices,
-                    self.ocr_engine.is_some(),
-                    &mut requests,
-                );
-            });
-            ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                let size = egui::vec2(90.0, 0.0);
-                self.options.help |= ui.add(Button::new("Help").min_size(size)).clicked();
-                defaults = ui.add(Button::new("Defaults").min_size(size)).clicked();
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    scan = ui.add(Button::new("Scan").min_size(size)).clicked();
-                    close |= ui.add(Button::new("Cancel").min_size(size)).clicked();
-                });
-            });
-        });
-        if defaults {
-            // Keep the chosen scanner; everything else returns to how it started.
-            let device = std::mem::take(&mut self.settings.device);
-            self.settings = ScanSettings {
-                device,
-                ..Default::default()
-            };
-        }
-        let top_most = !self.presets_open && !self.any_option_window();
-        if close || (top_most && escape_pressed(ctx)) {
-            self.scan_open = false;
-        }
-        self.apply_form_requests(requests, false);
-        if scan {
-            self.start_scan(ctx, false);
-        }
-    }
-
     fn any_option_window(&self) -> bool {
         let options = &self.options;
         options.scanner_options.is_some()
             || options.tabs.is_some()
             || options.multiple_files
             || options.save_preset.is_some()
-            || options.optimize.is_some()
-            || options.scanner_details
-            || options.help
     }
 
     /// Opens whatever the settings form asked for. `for_editor` says which settings it was showing.
@@ -1009,10 +1053,6 @@ impl App {
             self.options.tabs = Some(OptionsTab::Ocr);
         }
         self.options.multiple_files |= requests.multiple_files_options;
-        self.options.scanner_details |= requests.scanner_details;
-        if requests.optimize_filters {
-            self.options.optimize = Some(settings.optimize_opts.clone());
-        }
         if requests.browse_append {
             let chosen = rfd::FileDialog::new()
                 .set_title("PDF to append to")
@@ -1195,16 +1235,19 @@ impl App {
                 close |= title_bar(ui, "Scanner Options");
                 ui.horizontal(|ui| {
                     ui.label("Transfer Mechanism:");
-                    ComboBox::from_id_salt("transfer")
-                        .width(180.0)
-                        .selected_text(choice.label())
-                        .show_ui(ui, |ui| {
+                    outlined_dropdown(
+                        ui,
+                        ComboBox::from_id_salt("transfer")
+                            .width(180.0)
+                            .selected_text(choice.label()),
+                        |ui| {
                             for &option in TransferMechanism::ALL {
                                 ui.selectable_value(choice, option, option.label());
                             }
-                        })
-                        .response
-                        .accessible_name("Transfer mechanism");
+                        },
+                    )
+                    .response
+                    .accessible_name("Transfer mechanism");
                 });
                 ui.add_space(8.0);
                 (ok, close) = ok_cancel(ui, close);
@@ -1236,13 +1279,18 @@ impl App {
                         let options = &mut settings.optimize_opts;
                         ui.label("Each correction can be switched on or off:");
                         ui.add_space(4.0);
-                        ui.checkbox(&mut options.deskew, "Deskew").on_hover_text(
-                            "Straighten pages that went through the scanner at an angle",
-                        );
-                        ui.checkbox(&mut options.despeckle, "Despeckle")
+                        crate::selection_controls::checkbox(ui, &mut options.deskew, "Deskew")
                             .on_hover_text(
-                                "Remove stray dots that are too small to be part of a letter",
+                                "Straighten pages that went through the scanner at an angle",
                             );
+                        crate::selection_controls::checkbox(
+                            ui,
+                            &mut options.despeckle,
+                            "Despeckle",
+                        )
+                        .on_hover_text(
+                            "Remove stray dots that are too small to be part of a letter",
+                        );
                         level_checkbox(
                             ui,
                             &mut options.background_removal,
@@ -1251,17 +1299,25 @@ impl App {
                         .on_hover_text(
                             "Even out shading from wrinkles, creases and uneven lighting",
                         );
-                        ui.checkbox(&mut options.descreen, "Descreen")
+                        crate::selection_controls::checkbox(ui, &mut options.descreen, "Descreen")
                             .on_hover_text("Smooth away the dot pattern of printed photographs");
                         level_checkbox(ui, &mut options.text_sharpening, "Sharpen text")
                             .on_hover_text("Make the edges of letters crisper");
-                        ui.checkbox(&mut options.crop_borders, "Crop")
+                        crate::selection_controls::checkbox(ui, &mut options.crop_borders, "Crop")
                             .on_hover_text("Trim the black scanner background from the page edges");
-                        ui.checkbox(&mut options.remove_blank_pages, "Remove blank pages")
-                            .on_hover_text("Leave out pages with nothing on them");
+                        crate::selection_controls::checkbox(
+                            ui,
+                            &mut options.remove_blank_pages,
+                            "Remove blank pages",
+                        )
+                        .on_hover_text("Leave out pages with nothing on them");
                     }
                     OptionsTab::Compression => {
-                        ui.checkbox(&mut settings.optimize, "Reduce size and optimize");
+                        crate::selection_controls::checkbox(
+                            ui,
+                            &mut settings.optimize,
+                            "Reduce size and optimize",
+                        );
                         ui.add_space(4.0);
                         let options = &mut settings.optimize_opts;
                         ui.add_enabled_ui(settings.optimize, |ui| {
@@ -1271,7 +1327,13 @@ impl App {
                             );
                             ui.horizontal(|ui| {
                                 let mut reduce = options.downsample_dpi > 0;
-                                if ui.checkbox(&mut reduce, "Reduce resolution to").changed() {
+                                if crate::selection_controls::checkbox(
+                                    ui,
+                                    &mut reduce,
+                                    "Reduce resolution to",
+                                )
+                                .changed()
+                                {
                                     options.downsample_dpi = if reduce { 150 } else { 0 };
                                 }
                                 if reduce {
@@ -1293,9 +1355,11 @@ impl App {
                     }
                     OptionsTab::Ocr => {
                         let available = engine_name.is_some();
-                        ui.add_enabled(
+                        crate::selection_controls::checkbox_enabled(
+                            ui,
                             available,
-                            egui::Checkbox::new(&mut settings.ocr, "Make Searchable (run OCR)"),
+                            &mut settings.ocr,
+                            "Make Searchable (run OCR)",
                         );
                         ui.label(format!(
                             "Engine: {}",
@@ -1308,10 +1372,12 @@ impl App {
                         ui.add_enabled_ui(available && settings.ocr, |ui| {
                             ui.horizontal(|ui| {
                                 label_cell(ui, "Language:");
-                                ComboBox::from_id_salt("ocr_language")
-                                    .width(160.0)
-                                    .selected_text(&options.language)
-                                    .show_ui(ui, |ui| {
+                                outlined_dropdown(
+                                    ui,
+                                    ComboBox::from_id_salt("ocr_language")
+                                        .width(160.0)
+                                        .selected_text(&options.language),
+                                    |ui| {
                                         for language in &self.ocr_languages {
                                             ui.selectable_value(
                                                 &mut options.language,
@@ -1319,9 +1385,10 @@ impl App {
                                                 language,
                                             );
                                         }
-                                    })
-                                    .response
-                                    .accessible_name("OCR language");
+                                    },
+                                )
+                                .response
+                                .accessible_name("OCR language");
                             });
                             ui.horizontal(|ui| {
                                 label_cell(ui, "Page layout:");
@@ -1335,10 +1402,12 @@ impl App {
                                     .iter()
                                     .find(|(mode, _)| *mode == options.page_seg_mode)
                                     .map_or("Automatic", |(_, name)| name);
-                                ComboBox::from_id_salt("ocr_layout")
-                                    .width(160.0)
-                                    .selected_text(current)
-                                    .show_ui(ui, |ui| {
+                                outlined_dropdown(
+                                    ui,
+                                    ComboBox::from_id_salt("ocr_layout")
+                                        .width(160.0)
+                                        .selected_text(current),
+                                    |ui| {
                                         for (mode, name) in layouts {
                                             ui.selectable_value(
                                                 &mut options.page_seg_mode,
@@ -1346,9 +1415,10 @@ impl App {
                                                 name,
                                             );
                                         }
-                                    })
-                                    .response
-                                    .accessible_name("OCR page layout");
+                                    },
+                                )
+                                .response
+                                .accessible_name("OCR page layout");
                             });
                         });
                     }
@@ -1410,71 +1480,6 @@ impl App {
             });
             if close || escape_pressed(ctx) {
                 self.options.multiple_files = false;
-            }
-        }
-
-        if let Some(draft) = &mut self.options.optimize {
-            let mut ok = false;
-            let mut close = false;
-            let mut defaults = false;
-            show_modal(ctx, Id::unique("optimize_scanned_pdf"), |ui| {
-                ui.set_width(400.0);
-                close |= title_bar(ui, "Optimize Scanned PDF");
-                optimize_form(ui, draft);
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
-                    let size = egui::vec2(90.0, 0.0);
-                    defaults = ui.add(Button::new("Defaults").min_size(size)).clicked();
-                    (ok, close) = ok_cancel(ui, close);
-                });
-            });
-            if defaults {
-                *draft = OptimizeOptions::default();
-            }
-            if ok {
-                settings.optimize_opts = draft.clone();
-            }
-            if ok || close || escape_pressed(ctx) {
-                self.options.optimize = None;
-            }
-        }
-
-        if self.options.scanner_details {
-            let mut close = false;
-            show_modal(ctx, Id::unique("scanner_details"), |ui| {
-                ui.set_width(360.0);
-                close |= title_bar(ui, "Scanner Options");
-                scanner_details_form(ui, settings);
-                ui.add_space(8.0);
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    close |= ui
-                        .add(Button::new("Close").min_size(egui::vec2(90.0, 0.0)))
-                        .clicked();
-                });
-            });
-            if close || escape_pressed(ctx) {
-                self.options.scanner_details = false;
-            }
-        }
-
-        if self.options.help {
-            let mut close = false;
-            show_modal(ctx, Id::unique("scan_help"), |ui| {
-                ui.set_width(420.0);
-                close |= title_bar(ui, "Scan Help");
-                for (heading, text) in HELP {
-                    ui.label(RichText::new(*heading).strong());
-                    ui.label(*text);
-                    ui.add_space(6.0);
-                }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    close |= ui
-                        .add(Button::new("Close").min_size(egui::vec2(90.0, 0.0)))
-                        .clicked();
-                });
-            });
-            if close || escape_pressed(ctx) {
-                self.options.help = false;
             }
         }
 
@@ -1577,22 +1582,30 @@ impl App {
 }
 
 impl App {
-    pub fn show(&mut self, ui: &mut Ui) {
-        let ctx = ui.ctx().clone();
+    /// Advance background work even when the host window is hidden or collapsed.
+    /// `show` also calls this; repeated calls never start duplicate discovery jobs.
+    pub fn poll(&mut self, ctx: &Context) {
         if !self.initialized {
             self.initialized = true;
-            self.refresh(&ctx, true);
+            self.refresh(ctx, true);
+        } else if self.discovery_pending && self.busy.is_none() {
+            self.refresh(ctx, false);
         }
+        self.read_events(ctx);
+        if self.busy.is_some_and(|job| job != "Finding scanners") {
+            ctx.request_repaint_after(std::time::Duration::from_millis(30));
+        }
+    }
+
+    pub fn show(&mut self, ui: &mut Ui) {
+        let ctx = ui.ctx().clone();
+        self.poll(&ctx);
         if self.standalone {
             self.size_initial_window(&ctx);
         }
-        self.read_events(&ctx);
-        if self.is_busy() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(30));
-        }
         ui.scope(|ui| {
             configure_controls(ui);
-            self.main_window(ui);
+            crate::soft_3d::paint(ui, |ui| self.main_window(ui));
         });
         self.scan_dialog(&ctx);
         self.presets_dialog(&ctx);
@@ -1613,30 +1626,49 @@ fn settings_form(
 ) {
     ui.horizontal(|ui| {
         label_cell(ui, "Scanner:");
+        // Match the inset of the grouped dropdown rows below.
+        ui.add_space(egui::Frame::group(ui.style()).total_margin().left);
         let current = devices
             .iter()
             .find(|device| device.key() == settings.device);
         let shown = current.map_or("(no scanner selected)", |device| device.name.as_str());
-        ComboBox::from_id_salt("scanner")
-            .width(COMBO_WIDTH)
-            .truncate()
-            .selected_text(shown)
-            .show_ui(ui, |ui| {
-                for device in devices {
-                    ui.selectable_value(&mut settings.device, device.key(), &device.name);
-                }
-            })
-            .response
-            .accessible_name("Scanner");
+        // ComboBox::width sets a minimum. Bound the child UI as well so a
+        // long device name cannot grow beneath the Advanced Options button.
+        ui.allocate_ui_with_layout(
+            egui::vec2(COMBO_WIDTH, ROW_HEIGHT),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                outlined_dropdown(
+                    ui,
+                    ComboBox::from_id_salt("scanner")
+                        .width(COMBO_WIDTH)
+                        .truncate()
+                        .selected_text(shown),
+                    |ui| {
+                        for device in devices {
+                            ui.selectable_value(&mut settings.device, device.key(), &device.name);
+                        }
+                    },
+                )
+                .response
+                .accessible_name("Scanner")
+                .on_hover_text(shown);
+            },
+        );
         requests.scanner_options |= side_button(ui, "Advanced Options...", true);
     });
 
     group_box(ui, "Configure scanner", |ui| {
-        ui.checkbox(
+        crate::selection_controls::checkbox(
+            ui,
             &mut settings.use_native_ui,
             "Configure scanner using scanner's interface",
         );
-        ui.checkbox(&mut settings.prompt_more_pages, "Prompt to scan more pages");
+        crate::selection_controls::checkbox(
+            ui,
+            &mut settings.prompt_more_pages,
+            "Prompt to scan more pages",
+        );
         // With the scanner's own window in charge, the choices below belong to it.
         let own = !settings.use_native_ui;
         combo_row(
@@ -1687,13 +1719,15 @@ fn settings_form(
     });
 
     group_box(ui, "Output", |ui| {
-        ui.radio_value(
+        crate::selection_controls::radio_value(
+            ui,
             &mut settings.output,
             OutputMode::NewPdf,
             OutputMode::NewPdf.label(),
         );
         ui.horizontal(|ui| {
-            ui.radio_value(
+            crate::selection_controls::radio_value(
+                ui,
                 &mut settings.output,
                 OutputMode::Append,
                 OutputMode::Append.label(),
@@ -1715,7 +1749,8 @@ fn settings_form(
             requests.browse_append |= side_button(ui, "Browse...", appending);
         });
         ui.horizontal(|ui| {
-            ui.radio_value(
+            crate::selection_controls::radio_value(
+                ui,
                 &mut settings.output,
                 OutputMode::MultipleFiles,
                 OutputMode::MultipleFiles.label(),
@@ -1727,13 +1762,19 @@ fn settings_form(
 
     group_box(ui, "Optimize Scanned PDF", |ui| {
         ui.horizontal(|ui| {
-            ui.checkbox(&mut settings.optimize, "Reduce size and optimize");
+            crate::selection_controls::checkbox(
+                ui,
+                &mut settings.optimize,
+                "Reduce size and optimize",
+            );
             requests.optimize_options |= side_button(ui, "Options...", true);
         });
         ui.horizontal(|ui| {
-            ui.add_enabled(
+            crate::selection_controls::checkbox_enabled(
+                ui,
                 ocr_available,
-                egui::Checkbox::new(&mut settings.ocr, "Make Searchable (run OCR)"),
+                &mut settings.ocr,
+                "Make Searchable (run OCR)",
             );
             requests.ocr_options |= side_button(ui, "Options...", true);
         });
@@ -1743,334 +1784,14 @@ fn settings_form(
     });
 }
 
-/// What the Help button explains.
-const HELP: &[(&str, &str)] = &[
-    (
-        "Input",
-        "Choose the scanner and whether to scan one or both sides. Options has the paper \
-         source, colour, paper size and resolution.",
-    ),
-    (
-        "Output",
-        "Make one new PDF, split the pages into several files, or add the pages to the end \
-         of a PDF you already have.",
-    ),
-    (
-        "Document Settings",
-        "Optimize makes the file smaller and cleans the pages; slide towards Small Size or \
-         High Quality. Make Searchable reads the text so you can search and copy it.",
-    ),
-];
-
-/// The settings shown by the second Scan dialog layout.
-fn compact_form(
-    ui: &mut Ui,
-    settings: &mut ScanSettings,
-    devices: &[Device],
-    ocr_available: bool,
-    requests: &mut FormRequests,
-) {
-    group_box(ui, "Input", |ui| {
-        ui.horizontal(|ui| {
-            label_cell(ui, "Scanner:");
-            scanner_combo(ui, "scanner_compact", settings, devices);
-            requests.scanner_details |= small_side_button(ui, "Options...", true);
-        });
-        combo_row(
-            ui,
-            "Sides:",
-            "sides_compact",
-            &mut settings.sides,
-            Sides::ALL,
-            |v| v.label().to_owned(),
-            true,
-        );
-        ui.checkbox(
-            &mut settings.prompt_more_pages,
-            "Prompt for scanning more pages",
-        );
-    });
-
-    group_box(ui, "Output", |ui| compact_output(ui, settings, requests));
-
-    group_box(ui, "Document Settings", |ui| {
-        ui.checkbox(&mut settings.optimize, "Optimize Scanned PDF");
-        ui.horizontal(|ui| {
-            ui.add_space(INDENT);
-            ui.add_enabled_ui(settings.optimize, |ui| {
-                quality_slider(ui, &mut settings.optimize_opts.jpeg_quality);
-            });
-            requests.optimize_filters |= small_side_button(ui, "Options...", true);
-        });
-        ui.horizontal(|ui| {
-            ui.add_enabled(
-                ocr_available,
-                egui::Checkbox::new(&mut settings.ocr, "Make Searchable (Run OCR)"),
-            );
-            requests.ocr_options |= small_side_button(ui, "Options...", true);
-        });
-        if !ocr_available {
-            ui.label(RichText::new("Install Tesseract or OCR models to enable OCR.").weak());
-        }
-        let mut unavailable = false;
-        ui.add_enabled(
-            false,
-            egui::Checkbox::new(&mut unavailable, "Make PDF/A-1b compliant"),
-        )
-        .on_disabled_hover_text("Not available yet");
-        ui.checkbox(&mut settings.add_metadata, "Add Metadata")
-            .on_hover_text("Record a title, this program's name and the date in the PDF");
-    });
-}
-
-/// The Output group of the second layout.
-fn compact_output(ui: &mut Ui, settings: &mut ScanSettings, requests: &mut FormRequests) {
-    let appending = settings.output == OutputMode::Append;
-    if ui.radio(!appending, "New PDF Document").clicked() && appending {
-        settings.output = OutputMode::NewPdf;
-    }
-    ui.horizontal(|ui| {
-        ui.add_space(INDENT);
-        let mut multiple = settings.output == OutputMode::MultipleFiles;
-        ui.add_enabled_ui(!appending, |ui| {
-            if ui.checkbox(&mut multiple, "Multiple files").changed() {
-                settings.output = if multiple {
-                    OutputMode::MultipleFiles
-                } else {
-                    OutputMode::NewPdf
-                };
-            }
-        });
-        requests.multiple_files_options |= small_side_button(ui, "More Options...", multiple);
-    });
-    if ui.radio(appending, "Append to existing file").clicked() {
-        settings.output = OutputMode::Append;
-    }
-    ui.horizontal(|ui| {
-        ui.add_space(INDENT);
-        ui.add_enabled_ui(appending, |ui| {
-            ui.label("Select:");
-            let mut text = settings
-                .append_path
-                .as_ref()
-                .and_then(|path| path.file_name())
-                .map_or(String::new(), |name| name.to_string_lossy().into_owned());
-            ui.add(
-                egui::TextEdit::singleline(&mut text)
-                    .desired_width(230.0)
-                    .interactive(false),
-            );
-        });
-        requests.browse_append |= small_side_button(ui, "Browse...", appending);
-    });
-}
-
-/// The contents of "Optimize Scanned PDF": compression choices and the page filters.
-fn optimize_form(ui: &mut Ui, options: &mut OptimizeOptions) {
-    group_box(ui, "Optimization Options", |ui| {
-        let mut unavailable = false;
-        ui.add_enabled(
-            false,
-            egui::Checkbox::new(&mut unavailable, "Apply Adaptive Compression"),
-        )
-        .on_disabled_hover_text("Not available yet");
-        // One method each so far; the lists are here for when more are added.
-        filter_row(
-            ui,
-            "Color/Grayscale:",
-            "color_codec",
-            &mut (),
-            &[()],
-            |()| "JPEG".to_owned(),
-        );
-        filter_row(ui, "Monochrome:", "mono_codec", &mut (), &[()], |()| {
-            "CCITT Group 4".to_owned()
-        });
-        filter_row(
-            ui,
-            "Reduce resolution to:",
-            "downsample",
-            &mut options.downsample_dpi,
-            DOWNSAMPLE_CHOICES,
-            |dpi| match dpi {
-                0 => "Off".to_owned(),
-                dpi => format!("{dpi} dpi"),
-            },
-        );
-        ui.add_space(4.0);
-        ui.horizontal(|ui| quality_slider(ui, &mut options.jpeg_quality));
-    });
-
-    group_box(ui, "Filters", |ui| {
-        let level = |v: Level| v.label().to_owned();
-        switch_row(ui, "Deskew:", "deskew", &mut options.deskew);
-        filter_row(
-            ui,
-            "Background Removal:",
-            "background",
-            &mut options.background_removal,
-            Level::ALL,
-            level,
-        );
-        switch_row(ui, "Descreen:", "descreen", &mut options.descreen);
-        filter_row(
-            ui,
-            "Text Sharpening:",
-            "sharpen",
-            &mut options.text_sharpening,
-            Level::ALL,
-            level,
-        );
-        switch_row(ui, "Despeckle:", "despeckle", &mut options.despeckle);
-        switch_row(ui, "Crop Borders:", "crop", &mut options.crop_borders);
-        switch_row(
-            ui,
-            "Remove Blank Pages:",
-            "blank",
-            &mut options.remove_blank_pages,
-        );
-    });
-}
-
-/// Scanner settings the second layout keeps behind its Options button.
-fn scanner_details_form(ui: &mut Ui, settings: &mut ScanSettings) {
-    ui.checkbox(
-        &mut settings.use_native_ui,
-        "Configure scanner using scanner's interface",
-    );
-    // With the scanner's own window in charge, the choices below belong to it.
-    let own = !settings.use_native_ui;
-    combo_row(
-        ui,
-        "Source:",
-        "source_compact",
-        &mut settings.source,
-        Source::ALL,
-        |v| v.label().to_owned(),
-        own,
-    );
-    combo_row(
-        ui,
-        "Color Mode:",
-        "color_compact",
-        &mut settings.color_mode,
-        ColorMode::ALL,
-        |v| v.label().to_owned(),
-        own,
-    );
-    combo_row(
-        ui,
-        "Paper Size:",
-        "paper_compact",
-        &mut settings.paper_size,
-        PaperSize::ALL,
-        |v| v.label().to_owned(),
-        own,
-    );
-    combo_row(
-        ui,
-        "Resolution:",
-        "dpi_compact",
-        &mut settings.resolution,
-        RESOLUTIONS,
-        |v| format!("{v} dpi"),
-        own,
-    );
-    combo_row(
-        ui,
-        "Transfer:",
-        "transfer_compact",
-        &mut settings.transfer,
-        TransferMechanism::ALL,
-        |v| v.label().to_owned(),
-        true,
-    );
-}
-
-/// The drop-down list of scanners.
-fn scanner_combo(ui: &mut Ui, id: &str, settings: &mut ScanSettings, devices: &[Device]) {
-    let current = devices
-        .iter()
-        .find(|device| device.key() == settings.device);
-    let shown = current.map_or("(no scanner selected)", |device| device.name.as_str());
-    ComboBox::from_id_salt(id)
-        .width(COMBO_WIDTH)
-        .truncate()
-        .selected_text(shown)
-        .show_ui(ui, |ui| {
-            for device in devices {
-                ui.selectable_value(&mut settings.device, device.key(), &device.name);
-            }
-        })
-        .response
-        .accessible_name("Scanner");
-}
-
-/// "Small Size" to "High Quality": sets how hard page images are compressed.
-fn quality_slider(ui: &mut Ui, quality: &mut u8) {
-    ui.label("Small Size");
-    ui.spacing_mut().slider_width = 150.0;
-    ui.add(egui::Slider::new(quality, 10..=100).show_value(false))
-        .accessible_name("Image quality")
-        .on_hover_text(format!("Image quality {quality}"));
-    ui.label("High Quality");
-}
-
 /// A checkbox for a filter with strengths: ticking it chooses Medium.
 fn level_checkbox(ui: &mut Ui, level: &mut Level, text: &str) -> egui::Response {
     let mut on = *level != Level::Off;
-    let response = ui.checkbox(&mut on, text);
+    let response = crate::selection_controls::checkbox(ui, &mut on, text);
     if response.changed() {
         *level = if on { Level::Medium } else { Level::Off };
     }
     response
-}
-
-/// A labelled drop-down list in the filter list.
-fn filter_row<T: Copy + PartialEq>(
-    ui: &mut Ui,
-    label: &str,
-    id: &str,
-    value: &mut T,
-    choices: &[T],
-    text: impl Fn(T) -> String,
-) {
-    ui.horizontal(|ui| {
-        ui.allocate_ui_with_layout(
-            egui::vec2(FILTER_LABEL_WIDTH, ROW_HEIGHT),
-            Layout::left_to_right(Align::Center),
-            |ui| {
-                ui.set_min_width(FILTER_LABEL_WIDTH);
-                ui.label(label);
-            },
-        );
-        ComboBox::from_id_salt(id)
-            .width(150.0)
-            .selected_text(text(*value))
-            .show_ui(ui, |ui| {
-                for &choice in choices {
-                    ui.selectable_value(value, choice, text(choice));
-                }
-            })
-            .response
-            .accessible_name(label);
-    });
-}
-
-/// An On/Off drop-down list in the filter list.
-fn switch_row(ui: &mut Ui, label: &str, id: &str, value: &mut bool) {
-    filter_row(ui, label, id, value, &[true, false], |on| {
-        if on { "On" } else { "Off" }.to_owned()
-    });
-}
-
-/// A narrower `side_button`, for the second layout.
-fn small_side_button(ui: &mut Ui, text: &str, enabled: bool) -> bool {
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        ui.add_enabled(enabled, Button::new(text).min_size(egui::vec2(104.0, 0.0)))
-            .clicked()
-    })
-    .inner
 }
 
 /// Whether Escape was pressed this frame. Dialogs close on Escape, their X or Cancel, but not
@@ -2143,6 +1864,35 @@ fn side_button(ui: &mut Ui, text: &str, enabled: bool) -> bool {
     .inner
 }
 
+/// White dropdown fields with a visible border; other controls keep their style.
+fn outlined_dropdown<R>(
+    ui: &mut Ui,
+    combo: ComboBox<'_>,
+    menu_contents: impl FnOnce(&mut Ui) -> R,
+) -> egui::InnerResponse<Option<R>> {
+    ui.scope(|ui| {
+        let widgets = &mut ui.style_mut().visuals.widgets;
+        for state in [
+            &mut widgets.noninteractive,
+            &mut widgets.inactive,
+            &mut widgets.hovered,
+            &mut widgets.active,
+            &mut widgets.open,
+        ] {
+            state.bg_fill = crate::soft_3d::FIELD_FILL;
+            state.weak_bg_fill = crate::soft_3d::FIELD_FILL;
+            state.bg_stroke = egui::Stroke::new(1.0, crate::soft_3d::EDGE);
+        }
+        // Show interaction through the outline, keeping the field white.
+        let focus_outline = egui::Stroke::new(1.0, crate::soft_3d::FOCUS);
+        widgets.hovered.bg_stroke = focus_outline;
+        widgets.active.bg_stroke = focus_outline;
+        widgets.open.bg_stroke = focus_outline;
+        combo.show_ui(ui, |ui| crate::soft_3d::paint(ui, menu_contents))
+    })
+    .inner
+}
+
 /// A labelled drop-down list. When disabled it shows nothing, as its value is not in use.
 fn combo_row<T: Copy + PartialEq>(
     ui: &mut Ui,
@@ -2157,16 +1907,19 @@ fn combo_row<T: Copy + PartialEq>(
         label_cell(ui, label);
         ui.add_enabled_ui(enabled, |ui| {
             let shown = if enabled { text(*value) } else { String::new() };
-            ComboBox::from_id_salt(id)
-                .width(COMBO_WIDTH)
-                .selected_text(shown)
-                .show_ui(ui, |ui| {
+            outlined_dropdown(
+                ui,
+                ComboBox::from_id_salt(id)
+                    .width(COMBO_WIDTH)
+                    .selected_text(shown),
+                |ui| {
                     for &choice in choices {
                         ui.selectable_value(value, choice, text(choice));
                     }
-                })
-                .response
-                .accessible_name(label);
+                },
+            )
+            .response
+            .accessible_name(label);
         });
     });
 }
@@ -2182,6 +1935,49 @@ fn preview_texture(ctx: &Context, page: &Page, index: usize) -> TextureHandle {
 #[cfg(test)]
 mod layout_tests {
     use super::*;
+    use egui_kittest::{Harness, kittest::Queryable};
+    use openscan_core::settings::DialogLayout;
+
+    struct NoHardware;
+    impl scan_module::ScannerBackend for NoHardware {
+        fn capabilities(&self) -> scan_module::Capabilities {
+            scan_module::Capabilities {
+                name: "test",
+                driver_dialog: false,
+                programmatic_settings: false,
+                cancellation_note: "test",
+            }
+        }
+        fn devices(&self) -> Result<Vec<scan_module::Device>, scan_module::ScanError> {
+            Ok(Vec::new())
+        }
+        fn acquire(
+            &self,
+            _: &scan_module::ScanRequest,
+            _: &CancellationToken,
+            _: &mut dyn FnMut(scan_module::Progress),
+        ) -> Result<scan_module::ScanBatch, scan_module::ScanError> {
+            Err(scan_module::ScanError::Unsupported(
+                "No hardware in layout tests".into(),
+            ))
+        }
+    }
+
+    fn settle_discovery(harness: &mut Harness<'_, App>) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        loop {
+            harness.run_steps(1);
+            if !harness.state().is_busy() {
+                harness.run_steps(3);
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "scanner discovery did not finish"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
 
     fn test_app() -> App {
         let device = Device {
@@ -2204,8 +2000,11 @@ mod layout_tests {
             host_accept: false,
             scan_notes: false,
             initialized: true,
+            discovery_pending: false,
             standalone: true,
-            injected: None,
+            injected: Some(Arc::new(backend::native::NativeBackend(Box::new(
+                NoHardware,
+            )))),
             cancel_token: CancellationToken::default(),
             profile: ScanProfile::default(),
             startup_window_frames: 2,
@@ -2223,6 +2022,8 @@ mod layout_tests {
             pages: Vec::new(),
             previews: Vec::new(),
             selected_page: 0,
+            last_batch: None,
+            review: Default::default(),
             events_tx,
             events_rx,
             busy: None,
@@ -2327,10 +2128,14 @@ mod layout_tests {
             "scanning must wait for Done before saving"
         );
 
+        let retained_session = app.session.clone().unwrap();
         app.start_save_job(&ctx, Target::NewPdf(output.clone()));
         wait_for_worker(&mut app, &ctx);
         assert!(app.error.is_none(), "{:?}", app.error);
         assert_eq!(lopdf::Document::load(&output).unwrap().get_pages().len(), 2);
+        assert!(app.pages.is_empty() && app.session().is_none());
+        app.open_session(retained_session.directory);
+        wait_for_worker(&mut app, &ctx);
         assert_eq!(app.pages.len(), 2);
         assert_eq!(app.pages[0].image, held);
         assert_eq!(std::fs::read(&first).unwrap(), original_first);
@@ -2362,6 +2167,108 @@ mod layout_tests {
             std::fs::remove_file(path).unwrap();
         }
         std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn rescan_replaces_the_latest_batch_and_accept_clears_only_that_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("input.png");
+        image::RgbImage::from_pixel(100, 140, image::Rgb([255; 3]))
+            .save(&input)
+            .unwrap();
+        let ctx = Context::default();
+        let mut app = test_app();
+        app.storage = dir.path().join("sessions");
+        let device = app.devices[0].clone();
+        assert_eq!(app.scan_label(), "Scan");
+        app.start_scan_job(&ctx, false, device.clone(), vec![input.clone()]);
+        wait_for_worker(&mut app, &ctx);
+        let first_session = app.session.clone().unwrap();
+        assert_eq!(app.scan_label(), "Rescan");
+        app.start_scan_job(
+            &ctx,
+            true,
+            device.clone(),
+            vec![input.clone(), input.clone()],
+        );
+        wait_for_worker(&mut app, &ctx);
+        assert_eq!(app.pages.len(), 3);
+        assert!(
+            !app.complete_accept(&first_session),
+            "A stale host acknowledgement must not discard newly appended pages"
+        );
+        let old = app.session.clone().unwrap();
+        let discarded = old.resolve(&old.pages[1].image_path).unwrap();
+        app.start_scan_job(
+            &ctx,
+            false,
+            device.clone(),
+            vec![dir.path().join("missing.png")],
+        );
+        wait_for_worker(&mut app, &ctx);
+        assert!(app.error.take().is_some());
+        assert_eq!(app.pages.len(), 3);
+        assert!(discarded.is_file());
+        app.start_scan_job(&ctx, false, device, vec![input.clone()]);
+        wait_for_worker(&mut app, &ctx);
+        assert!(app.error.is_none(), "{:?}", app.error);
+        assert_eq!(app.pages.len(), 2);
+        assert_eq!(app.previews.len(), 2);
+        assert_eq!(app.selected_page, 1);
+        let accepted = app.session.clone().unwrap();
+        assert_eq!(accepted.pages[0].id, first_session.pages[0].id);
+        assert!(
+            !discarded.exists(),
+            "Replaced scan files must be removed after the replacement is committed"
+        );
+        assert!(input.is_file(), "Imported source files are never deleted");
+        assert!(app.complete_accept(&accepted));
+        assert!(app.session().is_none() && app.pages.is_empty() && app.previews.is_empty());
+        assert_eq!(app.scan_label(), "Scan");
+        assert!(
+            ScanSession::load(&accepted.directory).is_ok(),
+            "Done clears the workspace while retaining recovery files"
+        );
+    }
+
+    #[test]
+    fn scan_review_zoom_changes_display_without_modifying_scan_pixels() {
+        let ctx = Context::default();
+        let mut app = test_app();
+        app.scan_open = false;
+        let page = Page::from_image(
+            image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+                2000,
+                2800,
+                image::Rgb([255; 3]),
+            )),
+            300,
+        );
+        let original = page.image.clone();
+        app.receive_pages(&ctx, vec![page]);
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(1000.0, 700.0))
+            .build_ui_state(|ui, app| app.show(ui), app);
+        harness.run_steps(5);
+        assert!(harness.query_by_label("Convert2txt").is_none());
+        harness.state_mut().enable_convert2txt();
+        harness.run_steps(3);
+        harness.get_by_label("Convert2txt");
+        assert!(harness.query_by_label("Scan Note").is_none());
+        let fit_width = harness.get_by_label("Scanned page preview").rect().width();
+        harness.get_by_label("Scan preview actual size").click();
+        harness.run_steps(3);
+        let actual_width = harness.get_by_label("Scanned page preview").rect().width();
+        assert!(actual_width > fit_width * 2.0);
+        harness.get_by_label("Zoom in scanned page").click();
+        harness.run_steps(3);
+        assert!(harness.get_by_label("Scanned page preview").rect().width() > actual_width);
+        harness.get_by_label("Fit scanned page").click();
+        harness.run_steps(3);
+        assert!(
+            (harness.get_by_label("Scanned page preview").rect().width() - fit_width).abs() < 2.0
+        );
+        assert_eq!(harness.state().pages[0].image.as_ref(), original.as_ref());
     }
 
     #[test]
@@ -2449,7 +2356,7 @@ mod layout_tests {
     }
 
     #[test]
-    fn enlarged_scan_dialogs_fit_small_and_full_hd_screens() {
+    fn scan_dialog_fits_small_and_full_hd_screens_with_either_legacy_preference() {
         for (pixels, zoom) in [
             (egui::vec2(960.0, 460.0), 1.1),
             (egui::vec2(1280.0, 720.0), 2.0),
@@ -2467,7 +2374,10 @@ mod layout_tests {
                 for _ in 0..4 {
                     output.textures_delta.clear();
                     output = ctx.run_ui(input_for_pixels(&ctx, pixels), |ui| {
-                        app.main_window(ui);
+                        ui.scope(|ui| {
+                            configure_controls(ui);
+                            app.main_window(ui);
+                        });
                         app.scan_dialog(ui.ctx());
                     });
                 }
@@ -2478,10 +2388,10 @@ mod layout_tests {
                 assert!((more.center().y - done.center().y).abs() < 1.0);
                 visible_text_bounds(&output, "Scan");
                 visible_text_bounds(&output, "Cancel");
-                let id = match layout {
-                    DialogLayout::Classic => "scan_dialog",
-                    DialogLayout::Compact => "scan_dialog_compact",
-                };
+                // Old preset files may still store Compact. Only the single
+                // scan dialog is shown, without changing their scan settings.
+                visible_text_bounds(&output, "Manage Presets...");
+                let id = "scan_dialog";
                 let bounds = ctx
                     .memory(|memory| memory.area_rect(Id::unique(id)))
                     .unwrap();
@@ -2495,53 +2405,115 @@ mod layout_tests {
     }
 
     #[test]
-    fn long_scanner_names_do_not_expand_either_scan_dialog() {
-        for compact in [false, true] {
-            let ctx = Context::default();
+    fn long_scanner_names_stay_clear_of_advanced_options() {
+        for name in [
+            "HP8C8647 (HP Smart Tank 7600 series)".to_owned(),
+            format!("Office scanner {}", "long device name ".repeat(14)),
+        ] {
             let device = Device {
                 backend: "sane",
                 id: "net:office:scanner".to_owned(),
-                name: format!("Office scanner {}", "long device name ".repeat(14)),
+                name,
             };
             let mut settings = ScanSettings {
                 device: device.key(),
                 ..Default::default()
             };
             let devices = vec![device];
-            let width = if compact { COMPACT_WIDTH } else { DIALOG_WIDTH };
-            let mut bounds = egui::Rect::NOTHING;
-            for _ in 0..3 {
-                let input = egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(1100.0, 780.0),
-                    )),
-                    ..Default::default()
-                };
-                let mut output = ctx.run_pass(input, |ctx| {
-                    bounds = Modal::new(Id::unique("layout-regression"))
-                        .show(ctx, |ui| {
-                            ui.set_width(width);
-                            title_bar(ui, "Scan");
-                            let mut requests = FormRequests::default();
-                            if compact {
-                                compact_form(ui, &mut settings, &devices, true, &mut requests);
-                            } else {
-                                settings_form(ui, &mut settings, &devices, true, &mut requests);
-                            }
-                        })
-                        .response
-                        .rect;
+            let mut harness = Harness::builder()
+                .with_size(egui::vec2(1100.0, 780.0))
+                .build_ui(move |ui| {
+                    show_modal(ui.ctx(), Id::unique("layout-regression"), |ui| {
+                        title_bar(ui, "Scan");
+                        let mut requests = FormRequests::default();
+                        settings_form(ui, &mut settings, &devices, true, &mut requests);
+                    });
                 });
-                output.textures_delta.clear();
-            }
-            assert!(bounds.is_finite());
+            harness.run();
+            let scanner = harness
+                .get_by_role_and_label(egui::accesskit::Role::ComboBox, "Scanner")
+                .rect();
+            let advanced = harness.get_by_label("Advanced Options...").rect();
             assert!(
-                bounds.width() <= width + 40.0,
-                "compact={compact}: dialog grew to {} points",
-                bounds.width()
+                scanner.right() + 4.0 <= advanced.left(),
+                "Scanner {scanner:?} overlaps Advanced Options {advanced:?}"
             );
+            assert!((scanner.center().y - advanced.center().y).abs() < 2.0);
+            assert!(scanner.width() <= COMBO_WIDTH + 1.0);
+            for label in [
+                "Sides:",
+                "Source:",
+                "Color Mode:",
+                "Paper Size:",
+                "Resolution:",
+            ] {
+                let below = harness
+                    .get_by_role_and_label(egui::accesskit::Role::ComboBox, label)
+                    .rect();
+                assert!(
+                    (scanner.left() - below.left()).abs() < 1.0
+                        && (scanner.right() - below.right()).abs() < 1.0,
+                    "Scanner {scanner:?} is not aligned with {label} {below:?}"
+                );
+            }
         }
+    }
+
+    #[test]
+    fn scan_page_and_button_reopen_the_single_dialog_after_cancel() {
+        let mut app = test_app();
+        app.standalone = false;
+        app.presets.layout = DialogLayout::Compact;
+        app.settings.resolution = 600;
+        let settings = app.settings.clone();
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(1200.0, 800.0))
+            .build_ui_state(
+                |ui, app: &mut App| {
+                    egui::Panel::top("host-toolbar").show(ui, |ui| {
+                        if ui.button("Scan Page").clicked() {
+                            app.open_scan_dialog();
+                        }
+                    });
+                    app.show(ui);
+                },
+                app,
+            );
+        settle_discovery(&mut harness);
+        // Every host command opens the dialog, including a second visit after Cancel.
+        for _ in 0..2 {
+            harness.get_by_label("Scan Page").click();
+            settle_discovery(&mut harness);
+            harness.get_by_label("Configure scanner");
+            harness.get_by_label("Manage Presets...");
+            assert!(harness.state().scan_open);
+            harness.get_by_label("Cancel").click();
+            settle_discovery(&mut harness);
+            harness.run_steps(3);
+            assert!(!harness.state().scan_open);
+            assert_eq!(harness.state().settings, settings);
+        }
+        for removed in [
+            "From Scanner     ",
+            "Scan...",
+            "Open saved pages...",
+            "Manage Presets...",
+            "Scan dialog: Layout 1",
+            "Scan dialog: Layout 2",
+        ] {
+            assert!(harness.query_by_label(removed).is_none(), "{removed}");
+        }
+        harness
+            .get_by_role_and_label(egui::accesskit::Role::Button, "Scan")
+            .click();
+        settle_discovery(&mut harness);
+        assert!(harness.state().scan_open);
+        assert_eq!(harness.state().settings, settings);
+        assert!(harness.state().pages.is_empty());
+        assert!(!harness.state().is_busy());
+        harness.get_by_label("Manage Presets...").click();
+        settle_discovery(&mut harness);
+        harness.get_by_label("Manage Scan Presets");
     }
     #[test]
     #[ignore = "Optional wgpu render; set OPENSCAN_CAPTURE to a new output directory"]

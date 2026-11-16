@@ -1,0 +1,18 @@
+OpenScan 0.3.1 r4 platform packaging checks
+
+Windows: OpenScan, PDFCraft and PaperDesk installers were installed into isolated
+test folders. Every installed distribution file matched the package SHA-256
+manifest. Uninstall removed the application and preserved an added test file.
+Installers include only attested distribution files, never live recovery data.
+
+Ubuntu: all three packages transferred with matching SHA-256 hashes. Native
+command-line startup and shared-library resolution passed. PDFCraft and PaperDesk
+opened their scan dialogs and discovered the connected Fujitsu scanner without
+Refresh. PaperDesk displays Convert2txt; PDFCraft has no conversion-note button.
+Earlier versions and existing user data are retained. No physical scan was started.
+
+macOS: universal builds reserve linker space for post-link signatures. OCR models
+are placed in Contents/Resources and found by the application bundle lookup.
+Ad-hoc code signing and package integrity are checked during packaging. This is
+not Developer ID signing or notarization. Installer/runtime/scanner acceptance
+must still be performed on an actual Intel or Apple Silicon Mac.

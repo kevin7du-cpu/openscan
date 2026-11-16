@@ -52,7 +52,7 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        "Scan — OpenScan (Rust)",
+        concat!("OpenScan ", env!("CARGO_PKG_VERSION"), " — Soft 3D Light"),
         options,
         Box::new(move |cc| {
             cc.egui_ctx.set_theme(egui::ThemePreference::Light);
@@ -76,11 +76,7 @@ fn convert(args: &[String]) -> anyhow::Result<()> {
 
     let models = std::env::var_os("OPENSCAN_MODELS")
         .map(PathBuf::from)
-        .or_else(|| {
-            std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|p| p.join("models")))
-        });
+        .or_else(support::bundled_models);
     let engine = ocr::find(models.as_deref());
     let mut settings = settings::ScanSettings {
         ocr: engine.is_some(),
